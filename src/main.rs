@@ -15,17 +15,16 @@ use std::time::Duration;
 #[tokio::main]
 async fn main() {
 
+   fn calculate_arbitrage_percentage(cycle: &Vec<Edge>) -> f64 {
+      cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
+   }
+
    loop {
       std::thread::sleep(Duration::from_millis(100));
       println!("running analysis...");
 
       let exch_binance = binance::Binance::new().await;
       let cycles = exch_binance.run_bellman_ford_multi();
-      
-      /// Calculate Total Arbitrage Percentage of a Cycle
-      fn calculate_arbitrage_percentage(cycle: &Vec<Edge>) -> f64 {
-         cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
-      }
    
       for cycle in cycles {
          let arb_surface = calculate_arbitrage_percentage(&cycle) + 1.0;
