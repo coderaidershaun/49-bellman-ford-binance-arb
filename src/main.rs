@@ -20,7 +20,6 @@ async fn main() {
       println!("running analysis...");
 
       let exch_binance: binance::Binance = binance::Binance::new().await;
-      // let cycles = exch_binance.run_bellman_ford_single();
       let cycles = exch_binance.run_bellman_ford_multi();
       
       /// Calculate Total Arbitrage Percentage of a Cycle
