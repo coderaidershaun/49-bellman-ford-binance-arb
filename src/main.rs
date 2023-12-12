@@ -1,14 +1,14 @@
 mod arbitrage;
 mod bellmanford;
-mod binance;
 mod constants;
+mod exchanges;
 mod helpers;
 mod models;
 mod traits;
 
-use traits::ApiCalls;
+use traits::{ApiCalls, BellmanFordEx};
+use exchanges::binance;
 use bellmanford::Edge;
-use traits::BellmanFordEx;
 
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ async fn main() {
       std::thread::sleep(Duration::from_millis(100));
       println!("running analysis...");
 
-      let exch_binance: binance::Binance = binance::Binance::new().await;
+      let exch_binance = binance::Binance::new().await;
       let cycles = exch_binance.run_bellman_ford_multi();
       
       /// Calculate Total Arbitrage Percentage of a Cycle
