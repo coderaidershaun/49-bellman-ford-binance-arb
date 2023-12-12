@@ -184,7 +184,7 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
         .write(true)
         .append(true)
         .create(true)
-        .open("arbitrage_data.csv")?;
+        .open("/Users/shaun/Code/DEVELOPMENT/hft/bellman_ford_pegasus/arbitrage_data.csv")?;
 
     // Write the data to the CSV file
     let mut wtr = Writer::from_writer(file);
