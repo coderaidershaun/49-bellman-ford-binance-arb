@@ -5,7 +5,6 @@ use super::bellmanford::Edge;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs::OpenOptions;
-use std::io;
 use std::collections::HashSet;
 use csv::Writer;
 

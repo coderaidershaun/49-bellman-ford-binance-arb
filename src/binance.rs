@@ -16,7 +16,6 @@ pub struct Binance {
 #[async_trait]
 impl ApiCalls for Binance {
   async fn new() -> Self {
-    println!("extracting binance exchange rates...");
     let symbols = Self::fetch_symbols().await.expect("Failed to fetch Binance symbols");
     let prices = Self::fetch_prices().await.expect("Failed to fetch Binance prices");
     let exchange_rates = helpers::create_exchange_rates(&symbols, &prices);
@@ -96,14 +95,12 @@ impl ApiCalls for Binance {
 
 impl BellmanFordEx for Binance {
   fn run_bellman_ford_single(&self) -> Option<Vec<Edge>> {
-    println!("running bellman ford...");
     let bf = BellmanFord::new(&self.exchange_rates);
     let cycles = bf.find_negative_cycle();
     cycles
   }
 
   fn run_bellman_ford_multi(&self) -> Vec<Vec<Edge>> {
-    println!("running bellman ford...");
     let bf = BellmanFord::new(&self.exchange_rates);
     let cycles = bf.find_all_negative_cycles();
     cycles

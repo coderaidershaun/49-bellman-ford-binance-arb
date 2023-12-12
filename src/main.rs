@@ -17,6 +17,7 @@ async fn main() {
 
    loop {
       std::thread::sleep(Duration::from_millis(50));
+      println!("running analysis...");
 
       let exch_binance: binance::Binance = binance::Binance::new().await;
       // let cycles = exch_binance.run_bellman_ford_single();
