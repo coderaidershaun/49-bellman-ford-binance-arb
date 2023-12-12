@@ -132,8 +132,8 @@ impl ApiCalls for Binance {
   /// Places market order
   /// Side BUY / SELL
   async fn place_market_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<reqwest::Response, reqwest::Error> {
-    let api_key = "onxmukCTQLMlxHJGbJg81oS9vx94D0VKVsrFFTNUBBHQ64d2AvwpLPeBAVrT6Gjz";
-    let secret_key = "Avy3UfxFLoEsfyzroTwtQEsdWKNSExzdzoUhZuSa8rEWJkjEAYSYb3A2njE6d7ms";
+    let api_key = "YOUR KEY";
+    let secret_key = "YOUR SECRET";
     let order_type = "MARKET";
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
 
