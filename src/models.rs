@@ -36,6 +36,20 @@ impl BookType {
 }
 
 #[derive(Debug)]
+pub struct SymbolInfo {
+  pub symbol: String,
+  pub base_asset: String,
+  pub quote_asset: String,
+  pub base_asset_precision: u8,
+  pub quote_asset_precision: u8,
+  pub min_qty: String,
+  pub max_qty: String,
+  pub min_notional: String,
+  pub max_notional: String,
+  pub step_size: String,
+}
+
+#[derive(Debug)]
 pub struct ExchangeRate {
   pub symbol: String,
   pub from: String,

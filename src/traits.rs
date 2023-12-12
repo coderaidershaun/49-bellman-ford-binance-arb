@@ -1,11 +1,11 @@
 use super::bellmanford::Edge;
-use super::models::{BookType, SmartError};
+use super::models::{BookType, SmartError, SymbolInfo};
 
 use async_trait::async_trait;
 use std::collections::HashMap;
 
 pub trait ExchangeData {
-  fn symbols(&self) -> &HashMap<String, (String, String)>;
+  fn symbols(&self) -> &HashMap<String, SymbolInfo>;
   fn prices(&self) -> &HashMap<String, f64>;
   fn exchange_rates(&self) -> &Vec<(String, String, f64)>;
 }
@@ -13,9 +13,10 @@ pub trait ExchangeData {
 #[async_trait]
 pub trait ApiCalls {
   async fn new() -> Self;
-  async fn fetch_symbols() -> Result<HashMap<String, (String, String)>, SmartError>;
+  async fn fetch_symbols() -> Result<HashMap<String, SymbolInfo>, SmartError>;
   async fn fetch_prices() -> Result<HashMap<String, f64>, SmartError>;
   async fn get_orderbook_depth(&self, symbol: &str, book_type: BookType) -> Result<Vec<(f64, f64)>, SmartError>;
+  async fn place_market_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<reqwest::Response, reqwest::Error>;
 }
 
 pub trait BellmanFordEx {

@@ -1,14 +1,18 @@
 use super::bellmanford::{BellmanFord, Edge};
-use super::models::{BookType, SmartError};
+use super::models::{BookType, SmartError, SymbolInfo};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 use super::helpers;
 
 use async_trait::async_trait;
+
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Binance {
-  pub symbols: HashMap<String, (String, String)>,
+  pub symbols: HashMap<String, SymbolInfo>,
   pub prices: HashMap<String, f64>,
   pub exchange_rates: Vec<(String, String, f64)>,
 }
@@ -24,24 +28,56 @@ impl ApiCalls for Binance {
   
   /// Fetch Binance Symbols
   /// Retrieves Base and Quote symbol information so symbols can be broken up
-  async fn fetch_symbols() -> Result<HashMap<String, (String, String)>, SmartError> {
+  async fn fetch_symbols() -> Result<HashMap<String, SymbolInfo>, SmartError> {
     let url: &str = "https://api.binance.com/api/v3/exchangeInfo";
     let response: reqwest::Response = reqwest::get(url).await?;
     let data: serde_json::Value = response.json().await.unwrap();
-    let mut symbols: HashMap<String, (String, String)> = HashMap::new();
+    let mut symbols: HashMap<String, SymbolInfo> = HashMap::new();
+
     if let Some(symbol_infos) = data["symbols"].as_array() {
       for symbol_info in symbol_infos {
-        if let Some(status) = symbol_info["status"].as_str() {
-          if status == "TRADING" {
-            let symbol = symbol_info["symbol"].as_str().unwrap_or_default().to_string();
-            let base_asset = symbol_info["baseAsset"].as_str().unwrap_or_default().to_string();
-            let quote_asset = symbol_info["quoteAsset"].as_str().unwrap_or_default().to_string();
-            symbols.insert(symbol, (base_asset, quote_asset));
-          }
+        if symbol_info["status"] == "TRADING" && symbol_info["isSpotTradingAllowed"].as_bool().unwrap_or(false) {
+          let symbol = symbol_info["symbol"].as_str().unwrap_or_default().to_string();
+          let base_asset = symbol_info["baseAsset"].as_str().unwrap_or_default().to_string();
+          let quote_asset = symbol_info["quoteAsset"].as_str().unwrap_or_default().to_string();
+          let base_asset_precision = symbol_info["baseAssetPrecision"].as_u64().unwrap_or_default() as u8;
+          let quote_asset_precision = symbol_info["quoteAssetPrecision"].as_u64().unwrap_or_default() as u8;
+
+          // Extract minQty, maxQty, and stepSize from LOT_SIZE filter
+          let lot_size_filter = symbol_info["filters"].as_array().unwrap()
+            .iter()
+            .find(|&f| f["filterType"] == "LOT_SIZE")
+            .unwrap_or(&serde_json::Value::Null);
+          let min_qty = lot_size_filter["minQty"].as_str().unwrap_or_default().to_string();
+          let max_qty = lot_size_filter["maxQty"].as_str().unwrap_or_default().to_string();
+          let step_size = lot_size_filter["stepSize"].as_str().unwrap_or_default().to_string();
+
+          // Extract min_notional and max_notional from MIN_NOTIONAL filter
+          let notional_filter = symbol_info["filters"].as_array().unwrap()
+            .iter()
+            .find(|&f| f["filterType"] == "NOTIONAL")
+            .unwrap_or(&serde_json::Value::Null);
+          let min_notional = notional_filter["minNotional"].as_str().unwrap_or_default().to_string();
+          let max_notional = notional_filter["maxNotional"].as_str().unwrap_or_default().to_string();
+
+          let symbol_info = SymbolInfo {
+              symbol,
+              base_asset,
+              quote_asset,
+              base_asset_precision,
+              quote_asset_precision,
+              min_qty,
+              max_qty,
+              min_notional,
+              max_notional,
+              step_size,
+          };
+
+          symbols.insert(symbol_info.symbol.clone(), symbol_info);
         }
       }
     }
-  
+
     Ok(symbols)
   }
   
@@ -91,6 +127,38 @@ impl ApiCalls for Binance {
       Err(SmartError::Runtime("Failed to fetch data".to_string()))
     }
   }
+
+  /// Place Market Order
+  /// Places market order
+  /// Side BUY / SELL
+  async fn place_market_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<reqwest::Response, reqwest::Error> {
+    let api_key = "onxmukCTQLMlxHJGbJg81oS9vx94D0VKVsrFFTNUBBHQ64d2AvwpLPeBAVrT6Gjz";
+    let secret_key = "Avy3UfxFLoEsfyzroTwtQEsdWKNSExzdzoUhZuSa8rEWJkjEAYSYb3A2njE6d7ms";
+    let order_type = "MARKET";
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
+
+    // Create query string
+    let mut query = format!("symbol={}&side={}&type={}&quantity={}&timestamp={}", symbol, side, order_type, quantity, timestamp);
+
+    // Create signature
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).unwrap();
+    mac.update(query.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    // Append signature to query
+    query.push_str("&signature=");
+    query.push_str(&signature);
+
+    // Send request
+    let client = reqwest::Client::new();
+    let res: reqwest::Response = client.post("https://api.binance.com/api/v3/order")
+      .header("X-MBX-APIKEY", api_key)
+      .body(query)
+      .send()
+      .await?;
+
+    Ok(res)
+  }
 }
 
 impl BellmanFordEx for Binance {
@@ -108,7 +176,30 @@ impl BellmanFordEx for Binance {
 }
 
 impl ExchangeData for Binance {
-  fn symbols(&self) -> &HashMap<String, (String, String)> { &self.symbols }
+  fn symbols(&self) -> &HashMap<String, SymbolInfo> { &self.symbols }
   fn prices(&self) -> &HashMap<String, f64> { &self.prices }
   fn exchange_rates(&self) -> &Vec<(String, String, f64)> { &self.exchange_rates }
+}
+
+#[cfg(test)]
+mod test {
+
+  use super::*;
+
+  #[tokio::test]
+  async fn it_places_a_trade() {
+    let exchange: Binance = Binance::new().await;
+    let symbol = "BTCUSDT";
+    let quantity = 0.0002;
+    let side = "BUY";
+
+    dbg!(quantity);
+    dbg!(side);
+    let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
+    let price: f64 = *exchange.prices.get(symbol).unwrap();
+    let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+
+    let order = exchange.place_market_order(symbol, side, size).await;
+    dbg!(order);
+  }
 }
