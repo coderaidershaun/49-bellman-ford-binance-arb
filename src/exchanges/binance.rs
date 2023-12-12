@@ -164,8 +164,8 @@ impl ApiCalls for Binance {
 impl BellmanFordEx for Binance {
   fn run_bellman_ford_single(&self) -> Option<Vec<Edge>> {
     let bf = BellmanFord::new(&self.exchange_rates);
-    let cycles = bf.find_negative_cycle();
-    cycles
+    let cycle = bf.find_negative_cycle();
+    cycle
   }
 
   fn run_bellman_ford_multi(&self) -> Vec<Vec<Edge>> {
