@@ -26,6 +26,7 @@ RUN cargo build --release
 # docker create --name temp-container bellman_ford_pegasus
 # docker cp temp-container:/usr/src/myapp/target/release/bellman_ford_pegasus .
 # docker rm temp-container
+
 # upload the bellman_ford_pegasus file to an aws S3 bucket
 # set EC2 IAM to s3:GetObject
 
