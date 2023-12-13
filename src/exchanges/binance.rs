@@ -10,7 +10,7 @@ use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Binance {
   pub symbols: HashMap<String, SymbolInfo>,
   pub prices: HashMap<String, f64>,

@@ -7,6 +7,8 @@ pub enum SmartError {
   #[error(transparent)]
   Reqwest(#[from] reqwest::Error),
   #[error(transparent)]
+  Websocket(#[from] tungstenite::Error),
+  #[error(transparent)]
   ParseFloat(#[from] std::num::ParseFloatError),
   #[error(transparent)]
   Io(#[from] std::io::Error),
@@ -20,7 +22,7 @@ pub enum Direction {
   Reverse
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BookType {
   Asks,
   Bids,
@@ -35,7 +37,7 @@ impl BookType {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolInfo {
   pub symbol: String,
   pub base_asset: String,

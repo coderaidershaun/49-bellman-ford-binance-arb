@@ -1,19 +1,21 @@
-use super::constants::{ASSET_HOLDINGS, USD_BUDGET};
+use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_THRESH, UPDATE_SYMBOLS_SECONDS};
 use super::models::{ArbData, BookType, Direction, SmartError};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
+use super::helpers;
 use super::bellmanford::Edge;
 use super::exchanges::binance;
 
 use csv::Writer;
+use futures::future::join_all;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::fs::OpenOptions;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 
 /// Calculate Weighted Average Price
 /// Calculates the depth of the orderbook to get a real rate
 fn calculate_weighted_average_price(
-    orderbook: Vec<(f64, f64)>,
+    orderbook: &Vec<(f64, f64)>,
     budget: f64,
     direction: &Direction,
 ) -> Option<(f64, f64, f64)> {
@@ -80,55 +82,94 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
     if cycle.len() == 0 { return None };
 
     // Guard: Ensure asset holding
-    if !ASSET_HOLDINGS.contains(&cycle[0].from.as_str()) {
+    let from = cycle[0].from.as_str();
+    if !ASSET_HOLDINGS.contains(&from) {
+        eprintln!("Asset not in holding: {}", from);
         return None
     }
 
     // Get starting budget
-    let mut budget = match cycle[0].from.as_str() {
+    let mut budget = match from {
         "BTC" => USD_BUDGET / exchange.prices().get("BTCUSDT").expect("Expected price for BTCUSDT").to_owned(),
         "ETH" => USD_BUDGET / exchange.prices().get("ETHUSDT").expect("Expected price for ETHUSDT").to_owned(),
         "BNB" => USD_BUDGET / exchange.prices().get("BNBUSDT").expect("Expected price for BNBUSDT").to_owned(),
         "USDT" => USD_BUDGET,
         "BUSD" => USD_BUDGET,
         "USDC" => USD_BUDGET,
-        _ => return None
+        _ => {
+            eprintln!("{} not recognised as meaningful starting point", from);
+            return None
+        }
     };
 
     // Initialize
     let mut real_rate = 1.0;
+    let mut symbols: Vec<String> = vec![];
+    let mut directions: Vec<Direction> = vec![];
+    let mut book_types: Vec<BookType> = vec![];
+    let mut orderbooks: Vec<Vec<(f64, f64)>> = vec![];
 
-    // Assess trade
+    // Extract info for parallel async orderbook fetching
     for leg in cycle {
+        let symbol_1 = format!("{}{}", leg.to, leg.from);
+        let symbol_2 = format!("{}{}", leg.from, leg.to);
+        let symbol = if exchange.symbols().contains_key(symbol_1.as_str()) { symbol_1 } else { symbol_2 };
+        let book_type = if symbol.starts_with(leg.from.as_str()) { BookType::Asks } else { BookType::Bids };
+        let direction = if symbol.starts_with(leg.from.as_str()) { Direction::Forward } else { Direction::Reverse };
 
-        // Initialize Symbol
-        let symbol = if exchange.symbols().contains_key(format!("{}{}", leg.to, leg.from).as_str()) {
-            format!("{}{}", leg.to, leg.from)
-        } else {
-            format!("{}{}", leg.from, leg.to)
+        symbols.push(symbol);
+        directions.push(direction);
+        book_types.push(book_type);
+    }
+
+    // Build futures for orderbook asyncronous extraction
+    let futures: Vec<_> = symbols.iter().zip(book_types.iter())
+        .map(|(symbol, book_type)| exchange.get_orderbook_depth(symbol.as_str(), book_type.clone()))
+        .collect();
+
+    // Call api for orderbooks
+    let results: Vec<Result<Vec<(f64, f64)>, SmartError>> = join_all(futures).await;
+
+    // Guard: Ensure orderbook results
+    for result in results {
+        match result {
+            Ok(book) => orderbooks.push(book),
+            Err(e) => {
+                eprintln!("Error fetching order book: {:?}", e);
+                return None
+            },
+        }
+    }
+
+    // Perform arbitrage calculation
+    for i in 0..symbols.len() {
+        let symbol = &symbols[i];
+        let direction = &directions[i];
+        let orderbook = &orderbooks[i];
+
+        // Calculate Average Price and quantity out
+        let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(orderbook, budget, &direction);
+        let (weighted_price, total_qty) = match trade_res {
+            Some((wp, _, qty)) => (wp, qty),
+            None => {
+                eprintln!("Error calculating weighted price...");
+                return None;
+            }
         };
 
-        // Initialize Direction
-        // forward: price in to, qty in from
-        // reverse: price in from, qty in to
-        let (direction, book_type) = if symbol.starts_with(leg.from.as_str()) {
-            (Direction::Forward, BookType::Asks)
-        } else {
-            (Direction::Reverse, BookType::Bids)
-        };
-
-        // Extract orderbook
-        let orderbook = exchange.get_orderbook_depth(symbol.as_str(), book_type).await.expect("Failed to extract orderbook");
-
-        // Calculate Average Price
-        let Some((weighted_price, _, total_qty)) = calculate_weighted_average_price(
-            orderbook, budget, &direction
-        ) else {
-            return None
+        // Guard: Validate quantity
+        let symbol_info = exchange.symbols().get(symbol.as_str())?;
+        let price = exchange.prices().get(symbol.as_str())?;
+        let quantity = match helpers::validate_quantity(symbol_info, total_qty, *price) {
+            Ok(quantity) => quantity,
+            Err(e) => {
+                eprintln!("Failed to validate quantity: {:?}", e);
+                return None;
+            }
         };
 
         // Update budget
-        budget = total_qty;
+        budget = quantity;
 
         // Calculate Real Rate
         match direction {
@@ -138,7 +179,7 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
     }
 
     // Return result
-    if real_rate > 1.0 { Some(real_rate) } else { None }
+    Some(real_rate)
 }
 
 /// Store Arb
@@ -204,36 +245,64 @@ fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
     cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
 }
 
-/// Find Best Assets
+/// Best Symbols
 /// Finds the assets that appear most often within the required arb threshold
-pub async fn find_best_assets(best_symbols: Arc<Mutex<[&str; 10]>>) -> Result<(), SmartError> {
+pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Result<(), SmartError> {
 
     // Initialize
-    println!("finding best assets...");
-    let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let mut next_timestamp: u64 = timestamp + 5 * 60;
- 
+    println!("thread: best symbols running...");
+    let ignore_list = ["BTC", "USDT"];
 
- 
+    let mut symbols_hs: HashSet<String> = HashSet::new();
+    let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let mut save_timestamp: u64 = timestamp + UPDATE_SYMBOLS_SECONDS;
+
     loop {
-       std::thread::sleep(Duration::from_millis(100));
-       timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
- 
-       // Update best assets
-       
- 
-       let exch_binance = binance::Binance::new().await;
-       let cycles = exch_binance.run_bellman_ford_multi();
-    
-       for cycle in cycles {
-          let arb_surface = calculate_arbitrage_surface_rate(&cycle) + 1.0;
-          let arb_opt = validate_arbitrage_cycle(&cycle, &exch_binance).await;
-          if let Some(arb_rate) = arb_opt {
-             // let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
- 
- 
-          }
-       }
+        std::thread::sleep(Duration::from_millis(100));
+        timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        let exch_binance = binance::Binance::new().await;
+        let cycles = exch_binance.run_bellman_ford_multi();
+        for cycle in cycles {
+            let arb_opt = validate_arbitrage_cycle(&cycle, &exch_binance).await;
+            if let Some(arb_rate) = arb_opt {
+
+                // // Use if wanting to store and track arbitrage opportunities
+                // let _arb_surface = calculate_arbitrage_surface_rate(&cycle) + 1.0;
+                // let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
+
+                if arb_rate >= MIN_ARB_THRESH {
+                    for leg in cycle {
+                        if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.from.as_str()) { symbols_hs.insert(leg.from); }
+                        if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.to.as_str()) { symbols_hs.insert(leg.to); }
+                    }
+                }
+            }
+        }
+
+        // Update best symbols
+        if timestamp >= save_timestamp && symbols_hs.len() == MAX_SYMBOLS_WATCH {
+            dbg!("updating best symbols");
+            let sym_list: Vec<String> = symbols_hs.iter().map(|s| s.clone()).collect();
+            let mut new_best_symbols: Vec<String> = vec![];
+            for i in 0..sym_list.len() {
+                let sym_1 = format!("{}USDT", sym_list[i]);
+                let sym_2 = format!("{}BTC", sym_list[i]);
+                new_best_symbols.push(sym_1);
+                new_best_symbols.push(sym_2);
+            }
+
+            // Update shared symbols state
+            let mut shared_symbols = best_symbols.lock().unwrap();
+            shared_symbols.clear();
+            shared_symbols.extend(new_best_symbols);
+
+            // Clear set
+            symbols_hs.clear();
+
+            // Update next save timestamp
+            save_timestamp = timestamp + UPDATE_SYMBOLS_SECONDS;
+        }
     }
  }
  
