@@ -18,7 +18,8 @@ WORKDIR /usr/src/myapp
 # Compile the Rust project
 RUN cargo build --release
 
-# Clear docker
+# # USE THE BELOW FOR BUILDING TO LINUX FILE FOR RUNNING ON AWS EC2 INSTANCE
+# Clear docker (Warning this will remove any existing images and containers)
 # docker system prune -a
 # docker volume prune
 
@@ -28,7 +29,7 @@ RUN cargo build --release
 # docker rm temp-container
 
 # upload the bellman_ford_pegasus file to an aws S3 bucket
-# set EC2 IAM to s3:GetObject
+# remember to set EC2 IAM to s3:GetObject
 
 # sudo apt install awscli
 # aws s3 cp s3://cwizards_playground/bellman_ford_pegasus /home/ubuntu/bellman_ford_pegasus
