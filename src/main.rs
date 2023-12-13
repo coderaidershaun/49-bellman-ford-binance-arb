@@ -6,32 +6,22 @@ mod helpers;
 mod models;
 mod traits;
 
-use traits::{ApiCalls, BellmanFordEx};
-use exchanges::binance;
-use bellmanford::Edge;
-
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() {
+   let best_symbols = Arc::new(Mutex::new(["BTCUSDT", "ETHUSDT", "LINKUSDT", "DOTUSDT", "ETHBTC", "LINKBTC", "DOTBTC", "TRYBTC", "PEPEBTC", "DOGEUSDT"]));
 
-   fn calculate_arbitrage_percentage(cycle: &Vec<Edge>) -> f64 {
-      cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
-   }
+   let best_symbols_shared = best_symbols.clone();
+   let handle1 = tokio::spawn(async move {
+      arbitrage::find_best_assets(best_symbols_shared).await.unwrap();
+  });
 
-   loop {
-      std::thread::sleep(Duration::from_millis(100));
-      println!("running analysis...");
+   // let best_symbols_shared = best_symbols.clone();
+   // let handle2 = tokio::spawn(async move {
+   //    arbitrage::find_best_assets_2(best_symbols_shared).await.unwrap();
+   // });
 
-      let exch_binance = binance::Binance::new().await;
-      let cycles = exch_binance.run_bellman_ford_multi();
-   
-      for cycle in cycles {
-         let arb_surface = calculate_arbitrage_percentage(&cycle) + 1.0;
-         let arb_opt = arbitrage::validate_arbitrage_cycle(&cycle, &exch_binance).await;
-         if let Some(arb_rate) = arb_opt {
-            let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
-         }
-      }
-   }
+   let _ = handle1.await;
+   // let _ = handle2.await;
 }

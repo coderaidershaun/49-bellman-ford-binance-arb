@@ -2,11 +2,13 @@ use super::constants::{ASSET_HOLDINGS, USD_BUDGET};
 use super::models::{ArbData, BookType, Direction, SmartError};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 use super::bellmanford::Edge;
+use super::exchanges::binance;
 
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::fs::OpenOptions;
-use std::collections::HashSet;
 use csv::Writer;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::fs::OpenOptions;
+use std::collections::{HashSet, HashMap};
 
 /// Calculate Weighted Average Price
 /// Calculates the depth of the orderbook to get a real rate
@@ -195,3 +197,43 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
 
     Ok(())
 }
+
+/// Calculate Arbitrage Surface Rate
+/// Calculates the surface rate of an arbitrage opportunity
+fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
+    cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
+}
+
+/// Find Best Assets
+/// Finds the assets that appear most often within the required arb threshold
+pub async fn find_best_assets(best_symbols: Arc<Mutex<[&str; 10]>>) -> Result<(), SmartError> {
+
+    // Initialize
+    println!("finding best assets...");
+    let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let mut next_timestamp: u64 = timestamp + 5 * 60;
+ 
+
+ 
+    loop {
+       std::thread::sleep(Duration::from_millis(100));
+       timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+ 
+       // Update best assets
+       
+ 
+       let exch_binance = binance::Binance::new().await;
+       let cycles = exch_binance.run_bellman_ford_multi();
+    
+       for cycle in cycles {
+          let arb_surface = calculate_arbitrage_surface_rate(&cycle) + 1.0;
+          let arb_opt = validate_arbitrage_cycle(&cycle, &exch_binance).await;
+          if let Some(arb_rate) = arb_opt {
+             // let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
+ 
+ 
+          }
+       }
+    }
+ }
+ 
