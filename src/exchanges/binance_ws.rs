@@ -1,7 +1,7 @@
 // https://github.com/coderaidershaun/multithread-rust-arbitrage
 use crate::arbitrage::validate_arbitrage_cycle;
 use crate::bellmanford::BellmanFord;
-use crate::constants::UPDATE_SYMBOLS_SECONDS;
+use crate::constants::{UPDATE_SYMBOLS_SECONDS, MIN_ARB_THRESH};
 use crate::helpers::create_exchange_rates;
 use crate::models::{SymbolInfo, SmartError};
 use crate::traits::ApiCalls;
@@ -112,12 +112,15 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
           if let Some(c) = cycle_opt {
             if c.len() > 0 {
               let arb_opt = validate_arbitrage_cycle(&c, &exch_clone).await;
-
-              dbg!(&arb_opt);
               if let Some(arb) = arb_opt {
-                dbg!(arb);
+                if arb.0 >= MIN_ARB_THRESH { // + !!! 0.05% for each leg !!!
+                  dbg!(timestamp);
+                  dbg!(arb);
+                }
               }
-              std::thread::sleep(Duration::from_millis(500));
+
+              // Sleep
+              std::thread::sleep(Duration::from_millis(100));
             }
           }
 

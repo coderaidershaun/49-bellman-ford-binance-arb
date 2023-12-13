@@ -51,9 +51,6 @@ pub fn validate_quantity(symbol_info: &SymbolInfo, quantity: f64, price: f64) ->
 
   // Guard: Check if the quantity aligns with minimum notional value
   if quantity * price < symbol_info.min_notional.parse().expect("Failed to parse min notional value") {
-    dbg!(&symbol_info);
-    dbg!(&quantity);
-    dbg!(&price);
     return Err("Total trade value under minimum notional value".to_string());
   }
 

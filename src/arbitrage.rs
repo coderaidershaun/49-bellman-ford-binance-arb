@@ -100,8 +100,8 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
         let price = exchange.prices().get(symbol.as_str())?;
         let quantity = match helpers::validate_quantity(symbol_info, amount_in, *price) {
             Ok(quantity) => quantity,
-            Err(e) => {
-                eprintln!("Failed to validate quantity: {:?}", e);
+            Err(_e) => {
+                // eprintln!("Failed to validate quantity: {:?}", _e);
                 return None;
             }
         };
@@ -114,7 +114,7 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
         let (weighted_price, total_qty) = match trade_res {
             Some((wp, _, qty)) => (wp, qty),
             None => {
-                eprintln!("Error calculating weighted price...");
+                // eprintln!("Error calculating weighted price...");
                 return None;
             }
         };
@@ -145,15 +145,16 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
     // Guard: Ensure asset holding
     let from = cycle[0].from.as_str();
     if !ASSET_HOLDINGS.contains(&from) {
-        eprintln!("Asset not in holding: {}", from);
+        // eprintln!("Asset not in holding: {}", from);
         return None
     }
 
     // Get starting budget
-    let mut budget = match from {
+    let budget = match from {
         "BTC" => USD_BUDGET / exchange.prices().get("BTCUSDT").expect("Expected price for BTCUSDT").to_owned(),
         "ETH" => USD_BUDGET / exchange.prices().get("ETHUSDT").expect("Expected price for ETHUSDT").to_owned(),
         "BNB" => USD_BUDGET / exchange.prices().get("BNBUSDT").expect("Expected price for BNBUSDT").to_owned(),
+        "LINK" => USD_BUDGET / exchange.prices().get("LINKUSDT").expect("Expected price for LINKUSDT").to_owned(),
         "USDT" => USD_BUDGET,
         "BUSD" => USD_BUDGET,
         "USDC" => USD_BUDGET,
