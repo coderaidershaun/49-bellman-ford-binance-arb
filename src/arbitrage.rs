@@ -10,6 +10,7 @@ use futures::future::join_all;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::collections::HashSet;
 
 /// Calculate Weighted Average Price
@@ -277,7 +278,8 @@ pub fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
 pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Result<(), SmartError> {
 
     // Initialize
-    println!("thread: best symbols running...");
+    print!("\rthread: best symbols running...");
+    std::io::stdout().flush().unwrap();
     let ignore_list = ["BTC", "USDT"];
 
     let mut symbols_hs: HashSet<String> = HashSet::new();

@@ -15,6 +15,7 @@ use url::Url;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::io::Write;
 
 const BINANCE_WS_API: &str = "wss://stream.binance.com:9443";
 
@@ -49,7 +50,8 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
 
     // Connect to websocket
     let (mut socket, _) = connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
-    println!("thread: binance websocket running...");
+    print!("\rthread: binance websocket running...");
+    std::io::stdout().flush().unwrap();
 
     let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let mut next_timestamp: u64 = timestamp + 60; // Start with 60 seconds, then wait longer on future rounds
@@ -60,8 +62,9 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
       let msg = socket.read_message().expect("Error reading message");
       let msg = match msg {
         Message::Text(s) => s,
-        _ => { 
-          println!("warning: binance not connected...");
+        _ => {
+          print!("\rwarning: binance not connected...");
+          std::io::stdout().flush().unwrap();
           break 'inner;
         },
       };
@@ -89,7 +92,8 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
         next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 10; // Check every 10 seconds
         let new_tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
         if new_tickers != tickers { 
-          println!("symbols update, restarting connection...");
+          print!("\rsymbols update, restarting connection...");
+          std::io::stdout().flush().unwrap();
           socket.close(None)?;
           break 'inner; 
         }
@@ -112,14 +116,18 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
             if c.len() > 0 {
               let arb_opt = validate_arbitrage_cycle(&c, &exch_clone).await;
               if let Some(arb) = arb_opt {
+
+                // Store arbitrage opportunity
                 if arb.0 >= MIN_ARB_THRESH {
+                  print!("\rsuccess: arb found: {}", arb.0);
+                  std::io::stdout().flush().unwrap();
                   let surface_rate = calculate_arbitrage_surface_rate(&c);
                   let _: () = store_arb_cycle(&c, arb.0, surface_rate).expect("Failed to store results");
                 }
               }
 
               // Sleep
-              std::thread::sleep(Duration::from_millis(100));
+              std::thread::sleep(Duration::from_millis(50));
             }
           }
 
