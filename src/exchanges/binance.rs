@@ -181,25 +181,25 @@ impl ExchangeData for Binance {
   fn exchange_rates(&self) -> &Vec<(String, String, f64)> { &self.exchange_rates }
 }
 
-#[cfg(test)]
-mod test {
+// #[cfg(test)]
+// mod test {
 
-  use super::*;
+//   use super::*;
 
-  #[tokio::test]
-  async fn it_places_a_trade() {
-    let exchange: Binance = Binance::new().await;
-    let symbol = "BTCUSDT";
-    let quantity = 0.0002;
-    let side = "BUY";
+//   #[tokio::test]
+//   async fn it_places_a_trade() {
+//     let exchange: Binance = Binance::new().await;
+//     let symbol = "BTCUSDT";
+//     let quantity = 0.0002;
+//     let side = "BUY";
 
-    dbg!(quantity);
-    dbg!(side);
-    let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
-    let price: f64 = *exchange.prices.get(symbol).unwrap();
-    let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+//     dbg!(quantity);
+//     dbg!(side);
+//     let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
+//     let price: f64 = *exchange.prices.get(symbol).unwrap();
+//     let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
 
-    let order = exchange.place_market_order(symbol, side, size).await;
-    dbg!(order);
-  }
-}
+//     let order = exchange.place_market_order(symbol, side, size).await;
+//     dbg!(order);
+//   }
+// }

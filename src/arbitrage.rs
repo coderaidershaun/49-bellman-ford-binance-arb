@@ -1,11 +1,11 @@
-use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_THRESH, UPDATE_SYMBOLS_SECONDS};
+use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, UPDATE_SYMBOLS_SECONDS};
 use super::bellmanford::Edge;
 use crate::exchanges::binance::Binance;
 use super::helpers;
 use super::models::{ArbData, BookType, Direction, SmartError};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 
-use csv::Writer;
+use csv::WriterBuilder;
 use futures::future::join_all;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -249,18 +249,18 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
         asset_7
     };
 
-    // Create or append to a CSV file
+    // Save data
+    let file_path = "arbitrage_data.csv";
+    let file_exists = std::path::Path::new(file_path).exists();
     let file: std::fs::File = OpenOptions::new()
         .write(true)
         .append(true)
         .create(true)
-        .open("/Users/shaun/Code/DEVELOPMENT/hft/bellman_ford_pegasus/arbitrage_data.csv")?;
-
-    // Write the data to the CSV file
-    let mut wtr = Writer::from_writer(file);
+        .open(file_path)?;
+    let mut wtr = WriterBuilder::new()
+        .has_headers(!file_exists)
+        .from_writer(file);
     wtr.serialize(data)?;
-
-    // Ensure all data is flushed to the file
     wtr.flush()?;
 
     Ok(())
@@ -268,7 +268,7 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
 
 /// Calculate Arbitrage Surface Rate
 /// Calculates the surface rate of an arbitrage opportunity
-fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
+pub fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
     cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
 }
 
@@ -298,7 +298,7 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
                 // let _arb_surface = calculate_arbitrage_surface_rate(&cycle) + 1.0;
                 // let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
 
-                if arb_rate >= MIN_ARB_THRESH {
+                if arb_rate >= MIN_ARB_SEARCH {
                     for leg in cycle {
                         if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.from.as_str()) { symbols_hs.insert(leg.from); }
                         if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.to.as_str()) { symbols_hs.insert(leg.to); }

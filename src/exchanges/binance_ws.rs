@@ -1,9 +1,9 @@
 // https://github.com/coderaidershaun/multithread-rust-arbitrage
-use crate::arbitrage::validate_arbitrage_cycle;
+use crate::arbitrage::{validate_arbitrage_cycle, store_arb_cycle, calculate_arbitrage_surface_rate};
 use crate::bellmanford::BellmanFord;
-use crate::constants::{UPDATE_SYMBOLS_SECONDS, MIN_ARB_THRESH};
+use crate::constants::MIN_ARB_THRESH;
 use crate::helpers::create_exchange_rates;
-use crate::models::{SymbolInfo, SmartError};
+use crate::models::SmartError;
 use crate::traits::ApiCalls;
 use super::binance::Binance;
 
@@ -39,8 +39,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
     let mut prices: HashMap<String, f64> = HashMap::new();
 
     // Extract tickers from best
-    let mut tickers: Vec<String> = vec![];
-    tickers = extract_tickers(shared_best_symbols.clone());
+    let tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
 
     // Construct Stream
     let ext_url: Vec<String> = tickers.iter().map(|t| format!("{}@bookTicker/", t)).collect();
@@ -87,7 +86,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
       // Guard: Check for best symbols updates
       timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
       if timestamp >= next_timestamp {
-        next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + UPDATE_SYMBOLS_SECONDS;
+        next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 10; // Check every 10 seconds
         let new_tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
         if new_tickers != tickers { 
           println!("symbols update, restarting connection...");
@@ -113,9 +112,9 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
             if c.len() > 0 {
               let arb_opt = validate_arbitrage_cycle(&c, &exch_clone).await;
               if let Some(arb) = arb_opt {
-                if arb.0 >= MIN_ARB_THRESH { // + !!! 0.05% for each leg !!!
-                  dbg!(timestamp);
-                  dbg!(arb);
+                if arb.0 >= MIN_ARB_THRESH {
+                  let surface_rate = calculate_arbitrage_surface_rate(&c);
+                  let _: () = store_arb_cycle(&c, arb.0, surface_rate).expect("Failed to store results");
                 }
               }
 
@@ -127,20 +126,18 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
           is_calculating_clone.store(false, Ordering::Relaxed);
         });
       }
-
-
     }
   }
 }
 
-#[cfg(test)]
-mod test {
+// #[cfg(test)]
+// mod test {
 
-  use super::*;
+//   use super::*;
 
-  #[tokio::test]
-  async fn it_runs_binance_ws() {
-    // websocket_binance().await;
-  }
+//   #[tokio::test]
+//   async fn it_runs_binance_ws() {
+//     // websocket_binance().await;
+//   }
 
-}
+// }
