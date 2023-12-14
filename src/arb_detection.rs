@@ -1,7 +1,7 @@
 use crate::models::SymbolInfo;
 
 use super::arb_execution::execute_arbitrage_cycle;
-use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, UPDATE_SYMBOLS_SECONDS, MAX_CYCLE_LENGTH, MODE};
+use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, MIN_ARB_THRESH, UPDATE_SYMBOLS_SECONDS, MAX_CYCLE_LENGTH, MODE};
 use super::bellmanford::Edge;
 use super::exchanges::binance::Binance;
 use super::helpers;
@@ -137,7 +137,7 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
         // Calculate Average Price and quantity out
         let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(
             orderbook, 
-            amount_in, 
+            amount_in,
             &direction,
             symbol_info, // for quantity validation
             *general_price // for quantity validation
@@ -388,6 +388,9 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
         let cycles = exchange.run_bellman_ford_multi();
         for cycle in cycles {
 
+            print!("\ranalyzing cycle of length {}...", cycle.len());
+            std::io::stdout().flush().unwrap();
+
             // Guard: Ensure cycle length
             if cycle.len() > MAX_CYCLE_LENGTH { continue; }
 
@@ -395,7 +398,7 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
             if let Some((arb_rate, quantities, symbols, book_types)) = arb_opt {
 
                 // Guard: Ensure arb rate
-                if arb_rate < MIN_ARB_SEARCH { continue; }
+                if arb_rate < MIN_ARB_THRESH { continue; }
 
                 // Guard: Ensure from asset is ipart of Holding Assets
                 let from_asset = cycle[0].from.as_str();
@@ -412,11 +415,12 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
                         // !!! PLACE TRADE !!!
                         println!("\nPlacing trade...");
                         let result = execute_arbitrage_cycle(
-                            from_asset,
+                            &cycle,
                             &symbols, &quantities, 
                             &book_types, 
                             &exchange
                         ).await;
+                        
                         if let Err(e) = result {
                             panic!("Failed to place trade: {:?}", e);
                         }
@@ -424,7 +428,7 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
                         is_store
                     }, 
                     Mode::NoTradeSearch(is_store) => is_store,
-                    _ => return Err(SmartError::Runtime("Should not be option other than TradSearch or NoTradeSearch for this function".to_string()))          
+                    _ => return Err(SmartError::Runtime("Should not be option other than TradeSearch or NoTradeSearch for this function".to_string()))          
                 };
 
                 // Store Result

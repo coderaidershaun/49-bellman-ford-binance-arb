@@ -1,9 +1,10 @@
 // https://github.com/coderaidershaun/multithread-rust-arbitrage
 use crate::arb_detection::{validate_arbitrage_cycle, store_arb_cycle, calculate_arbitrage_surface_rate};
+use crate::arb_execution::execute_arbitrage_cycle;
 use crate::bellmanford::BellmanFord;
-use crate::constants::MIN_ARB_THRESH;
+use crate::constants::{MIN_ARB_THRESH, ASSET_HOLDINGS, MODE};
 use crate::helpers::create_exchange_rates;
-use crate::models::SmartError;
+use crate::models::{Mode, SmartError};
 use crate::traits::ApiCalls;
 use super::binance::Binance;
 
@@ -112,17 +113,50 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
           // Check for arbitrage
           let bf: BellmanFord = BellmanFord::new(&exchange_rates);
           let cycle_opt = bf.find_negative_cycle();
-          if let Some(c) = cycle_opt {
-            if c.len() > 0 {
-              let arb_opt = validate_arbitrage_cycle(&c, &exch_clone).await;
-              if let Some(arb) = arb_opt {
+          if let Some(cycle) = cycle_opt {
+            if cycle.len() > 0 {
+              let arb_opt = validate_arbitrage_cycle(&cycle, &exch_clone).await;
+              if let Some((arb_rate, quantities, symbols, book_types)) = arb_opt {
 
-                // Store arbitrage opportunity
-                if arb.0 >= MIN_ARB_THRESH {
-                  let surface_rate = calculate_arbitrage_surface_rate(&c);
-                  let _: () = store_arb_cycle(&c, arb.0, surface_rate).expect("Failed to store results");
-                  print!("\rsuccess: arb found: {}", arb.0);
-                  std::io::stdout().flush().unwrap();
+                // Ensure arb rate
+                if arb_rate >= MIN_ARB_THRESH { 
+
+                  // Guard: Ensure from asset is ipart of Holding Assets
+                  let from_asset = cycle[0].from.as_str();
+                  if !ASSET_HOLDINGS.contains(&from_asset) { panic!("Error: Asset holdings do not include symbol") }
+
+                  // Execute and get store trigger
+                  let is_store = match MODE {
+                    Mode::TradeWss(is_store) => {
+
+                      dbg!(&book_types);
+                      dbg!(&symbols);
+                      dbg!(&quantities);
+
+                      // !!! PLACE TRADE !!!
+                      println!("\nPlacing trade...");
+                      let result = execute_arbitrage_cycle(
+                          &cycle,
+                          &symbols, &quantities, 
+                          &book_types, 
+                          &exch_clone
+                      ).await;
+                      
+                      if let Err(e) = result {
+                          panic!("Failed to place trade: {:?}", e);
+                      }
+
+                      is_store
+                    },
+                    Mode::NoTradeWss(is_store) => is_store,
+                    _ => false
+                  };
+
+                  // Store Result
+                  if is_store {
+                    let arb_surface: f64 = calculate_arbitrage_surface_rate(&cycle);
+                    let _: () = store_arb_cycle(&cycle, arb_rate, arb_surface).expect("Failed to save arb");
+                  }
                 }
               }
 

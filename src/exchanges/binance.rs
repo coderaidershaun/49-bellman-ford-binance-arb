@@ -223,6 +223,43 @@ impl ApiCalls for Binance {
 
     Ok(free_balance)
   }
+
+  /// Get Asset Account Balance
+  /// Retrieves Spot Balance for given asset (used for checking amounts available to trade)
+  async fn get_symbol_commission_rate(&self, symbol: &str) -> Result<f64, SmartError> {
+    dotenv().ok();
+
+    let api_key = env::var("BINANCE_API_KEY")
+      .expect("BINANCE_API_KEY not found in .env file");
+
+    let api_secret = env::var("BINANCE_API_SECRET")
+      .expect("BINANCE_API_SECRET not found in .env file");
+
+    // Constuct Query
+    let mut query = format!("symbol={}", symbol);
+
+    // Create signature
+    let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
+    mac.update(query.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    // Append signature to query
+    query.push_str("&signature=");
+    query.push_str(&signature);
+
+    // Send request
+    let url = format!("https://api.binance.com/api/v3/account/commission?{}", query);
+    let client = reqwest::Client::new();
+    let res: reqwest::Response = client.get(url)
+      .header("X-MBX-APIKEY", api_key)
+      .send()
+      .await?;
+
+    let res_text = res.text().await?;
+    let commission_info: serde_json::Value = serde_json::from_str(&res_text)?;
+    dbg!(&commission_info);
+    Ok(0.0)
+  }
 }
 
 impl BellmanFordEx for Binance {
@@ -311,5 +348,14 @@ mod test {
     let asset: &str = "USDT";
     let balance = exchange.get_asset_account_balance(asset).await.unwrap();
     assert!(balance >= 0.0);
+  }
+
+  #[tokio::test]
+  async fn it_retrieves_symbol_commission() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let exchange: Binance = Binance::new().await;
+    let symbol: &str = "BTCUSDT";
+    let commission = exchange.get_symbol_commission_rate(symbol).await.unwrap();
+    assert!(commission >= 0.0);
   }
 }

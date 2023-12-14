@@ -18,6 +18,7 @@ pub trait ApiCalls {
   async fn get_orderbook_depth(&self, symbol: &str, book_type: BookType) -> Result<Vec<(f64, f64)>, SmartError>;
   async fn place_market_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<reqwest::Response, reqwest::Error>;
   async fn get_asset_account_balance(&self, asset: &str) -> Result<f64, SmartError>;
+  async fn get_symbol_commission_rate(&self, symbol: &str) -> Result<f64, SmartError>;
 }
 
 pub trait BellmanFordEx {
