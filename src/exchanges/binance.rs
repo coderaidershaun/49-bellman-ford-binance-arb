@@ -234,13 +234,21 @@ mod test {
   //   let quantity = 0.0002;
   //   let side = "BUY";
 
-  //   dbg!(quantity);
-  //   dbg!(side);
   //   let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
   //   let price: f64 = *exchange.prices.get(symbol).unwrap();
   //   let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
 
-  //   let order = exchange.place_market_order(symbol, side, size).await;
-  //   dbg!(order);
+  //   let result = exchange.place_market_order(symbol, side, size).await;
+  //   match result {
+  //     Ok(res) => {
+  //       let res_text = res.text().await.unwrap();
+  //       dbg!(&res_text);
+  //       assert!(res_text.contains("FILLED"));
+  //     },
+  //     Err(e) => {
+  //       dbg!(e);
+  //       panic!("Failed to connect to Binance")
+  //     }
+  //   }
   // }
 }
