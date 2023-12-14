@@ -112,7 +112,12 @@ impl ApiCalls for Binance {
     let resp: reqwest::Response = reqwest::get(&url).await?;
 
     if resp.status().is_success() {
-      let data: serde_json::Value = resp.json().await?;
+      let data_res: Result<serde_json::Value, reqwest::Error> = resp.json().await;
+      let data = match data_res {
+        Ok(data) => data,
+        Err(e) => panic!("Failed to extract orderbook: {:?}", e)
+      };
+
       let order_book = data[book_type.as_str()].as_array().ok_or("Invalid JSON structure").map_err(|e| SmartError::Runtime(e.to_string()))?;
 
       let mut result = vec![];
@@ -170,6 +175,53 @@ impl ApiCalls for Binance {
       .await?;
 
     Ok(res)
+  }
+
+  /// Get Asset Account Balance
+  /// Retrieves Spot Balance for given asset (used for checking amounts available to trade)
+  async fn get_asset_account_balance(&self, asset: &str) -> Result<f64, SmartError> {
+    dotenv().ok();
+
+    let api_key = env::var("BINANCE_API_KEY")
+      .expect("BINANCE_API_KEY not found in .env file");
+
+    let api_secret = env::var("BINANCE_API_SECRET")
+      .expect("BINANCE_API_SECRET not found in .env file");
+
+    // Constuct Query
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
+    let mut query = format!("timestamp={}", timestamp);
+
+    // Create signature
+    let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
+    mac.update(query.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
+
+    // Append signature to query
+    query.push_str("&signature=");
+    query.push_str(&signature);
+
+    // Send request
+    let url = format!("https://api.binance.com/api/v3/account?{}", query);
+    let client = reqwest::Client::new();
+    let res: reqwest::Response = client.get(url)
+      .header("X-MBX-APIKEY", api_key)
+      .send()
+      .await?;
+
+    let res_text = res.text().await?;
+    let account_info: serde_json::Value = serde_json::from_str(&res_text)?;
+    let balances: &Vec<serde_json::Value> = account_info["balances"].as_array().expect("Failed to find balances");
+    let mut free_balance = 0.0;
+    for item in balances {
+      let coin = item["asset"].as_str().expect("Failed to locate asset");
+      if coin == asset {
+        free_balance = item["free"].as_str().expect("Failed to locate available amount").parse::<f64>().expect("Filed to parse balance");
+        break;
+      }
+    }    
+
+    Ok(free_balance)
   }
 }
 
@@ -251,4 +303,13 @@ mod test {
   //     }
   //   }
   // }
+
+  #[tokio::test]
+  async fn it_retrieves_account_asset_balance() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let exchange: Binance = Binance::new().await;
+    let asset: &str = "USDT";
+    let balance = exchange.get_asset_account_balance(asset).await.unwrap();
+    assert!(balance >= 0.0);
+  }
 }
