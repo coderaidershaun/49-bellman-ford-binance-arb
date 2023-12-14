@@ -251,8 +251,10 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
     };
 
     // Save data
-    let file_path = "arbitrage_data.csv";
-    let file_exists = std::path::Path::new(file_path).exists();
+    let current_dir = std::env::current_dir()?;
+    let base_path = if current_dir.to_str().unwrap().contains("Users") { "/Users/shaun/Code/DEVELOPMENT/hft/bellman_ford_pegasus".to_owned() } else { "/home/ubuntu".to_owned() };
+    let file_path = format!("{}/arbitrage_data.csv", base_path);
+    let file_exists = std::path::Path::new(file_path.as_str()).exists();
     let file: std::fs::File = OpenOptions::new()
         .write(true)
         .append(true)
@@ -311,7 +313,9 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
 
         // Update best symbols
         if timestamp >= save_timestamp && symbols_hs.len() == MAX_SYMBOLS_WATCH {
-            dbg!("updating best symbols");
+            print!("\rupdating best symbols...");
+            std::io::stdout().flush().unwrap();
+
             let sym_list: Vec<String> = symbols_hs.iter().map(|s| s.clone()).collect();
             let mut new_best_symbols: Vec<String> = vec![];
             for i in 0..sym_list.len() {
@@ -335,3 +339,50 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
     }
  }
  
+
+ #[cfg(test)]
+ mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn it_calculates_weighted_price_metrics() {
+        std::thread::sleep(Duration::from_millis(100));
+        let exchange = Binance::new().await;
+        let budget = 10.0;
+        let direction = Direction::Forward;
+        let orderbook = exchange.get_orderbook_depth("BTCUSDT", BookType::Asks).await.unwrap();
+        let result = calculate_weighted_average_price(&orderbook, budget, &direction);
+        match result {
+            Some((weighted_average_price, total_cost, total_quantity)) => {
+                assert!(weighted_average_price > 0.0);
+                assert!(total_cost > 0.0);
+                assert!(total_quantity > 0.0);
+            },
+            None => panic!("No weighted average price metrics")
+        };
+    }
+
+    #[tokio::test]
+    async fn it_validates_arbitrage_cycle() {
+        std::thread::sleep(Duration::from_millis(100));
+        let exchange = Binance::new().await;
+        let cycle = exchange.run_bellman_ford_single().unwrap();
+        let result = validate_arbitrage_cycle(&cycle, &exchange).await;
+        match result {
+            Some((real_rate, quantities, symbols)) => {
+                assert!(real_rate > 0.0);
+                assert!(quantities.len() > 0);
+                assert!(symbols.len() > 0);
+            },
+            None => println!("No real arbitrage opportunity")
+        };
+    }
+
+    #[tokio::test]
+    async fn it_stores_an_arb_cycle() {
+        std::thread::sleep(Duration::from_millis(100));
+        let exchange = Binance::new().await;
+        let cycle = exchange.run_bellman_ford_single().unwrap();
+        let _result: () = store_arb_cycle(&cycle, 1.1, 0.1).unwrap();
+    }
+ }

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() {
-   let init_symbols: Vec<&str> = vec!["BTCUSDT", "ETHUSDT", "LINKUSDT", "DOTUSDT", "ETHBTC", "LINKBTC", "DOTBTC", "TRYBTC", "PEPEBTC", "DOGEUSDT"].into();
+   let init_symbols: Vec<&str> = vec!["BTCUSDT", "ETHUSDT", "LINKUSDT", "DOTUSDT", "ETHBTC", "LINKBTC", "DOTBTC", "TRYBTC", "PEPEBTC", "DOGEUSDT"];
    let init_symbols: Vec<String> = init_symbols.iter().map(|s| s.to_string()).collect();
    let best_symbols = Arc::new(Mutex::new(init_symbols));
 

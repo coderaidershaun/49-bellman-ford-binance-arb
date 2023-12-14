@@ -192,31 +192,40 @@ impl BellmanFord {
 mod tests {
   use super::*;
 
-  #[test]
-  fn it_detects_arbitrage() {
-    let test_exchange_rates = vec![
-      ("USD".to_string(), "EUR".to_string(), 0.741),
-      ("EUR".to_string(), "USD".to_string(), 1.35),
-      ("USD".to_string(), "GBP".to_string(), 0.657),
-      ("GBP".to_string(), "USD".to_string(), 1.52),
-      ("EUR".to_string(), "GBP".to_string(), 0.888),
-      ("GBP".to_string(), "EUR".to_string(), 1.126),
-    ];
-    
-    let currency_exchange = BellmanFord::new(&test_exchange_rates);
+  fn get_test_rates_fx() -> Vec<(String, String, f64)> {
+    vec![
+      ("USD".to_string(), "EUR".to_string(), 0.9),
+      ("EUR".to_string(), "USD".to_string(), 1.21),
+      ("USD".to_string(), "GBP".to_string(), 0.75),
+      ("GBP".to_string(), "USD".to_string(), 1.33),
+      ("GBP".to_string(), "EUR".to_string(), 1.197),
+    ]
+  }
 
-    match currency_exchange.find_negative_cycle() {
+  #[tokio::test]
+  async fn it_detects_arbitrage_negative_cycle() {
+    let test_exchange_rates: Vec<(String, String, f64)> = get_test_rates_fx();
+    let bf: BellmanFord = BellmanFord::new(&test_exchange_rates);
+    match bf.find_negative_cycle() {
       Some(cycle) => {
-        dbg!(&cycle);
         let mut stake = 1000.0;
         for edge in cycle {
           println!("{} to {}: {}", edge.from, edge.to, stake);
           stake *= f64::exp(-edge.weight);
         }
         println!("Final stake: {}", stake);
-        // assert!(stake > 1000.0);
+        assert!(stake > 1000.0);
       },
       None => println!("No arbitrage opportunity"),
     }
+  }
+
+  #[tokio::test]
+  async fn it_detects_all_arbitrage_negative_cycles() {
+    let test_exchange_rates = get_test_rates_fx();
+    let bf: BellmanFord = BellmanFord::new(&test_exchange_rates);
+    let cycles = bf.find_all_negative_cycles();
+    assert!(cycles.len() > 0);
+    assert!(cycles[0].len() > 0);
   }
 }

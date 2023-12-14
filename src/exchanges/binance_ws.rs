@@ -121,6 +121,8 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
                 if arb.0 >= MIN_ARB_THRESH {
                   print!("\rsuccess: arb found: {}", arb.0);
                   std::io::stdout().flush().unwrap();
+                  println!("Storing arb...");
+
                   let surface_rate = calculate_arbitrage_surface_rate(&c);
                   let _: () = store_arb_cycle(&c, arb.0, surface_rate).expect("Failed to store results");
                 }
@@ -138,14 +140,14 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
   }
 }
 
-// #[cfg(test)]
-// mod test {
+#[cfg(test)]
+mod test {
+  use super::*;
 
-//   use super::*;
-
-//   #[tokio::test]
-//   async fn it_runs_binance_ws() {
-//     // websocket_binance().await;
-//   }
-
-// }
+  // #[tokio::test]
+  // async fn it_runs_binance_ws() {
+  //   let init_symbols: Vec<String> = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "LINKUSDT".to_string()];
+  //   let best_symbols = Arc::new(Mutex::new(init_symbols));
+  //   let _ = websocket_binance(best_symbols).await;
+  // }
+}

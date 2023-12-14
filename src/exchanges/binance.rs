@@ -181,25 +181,54 @@ impl ExchangeData for Binance {
   fn exchange_rates(&self) -> &Vec<(String, String, f64)> { &self.exchange_rates }
 }
 
-// #[cfg(test)]
-// mod test {
+#[cfg(test)]
+mod test {
+  use super::*;
 
-//   use super::*;
+  #[tokio::test]
+  async fn it_creates_binance_instance() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let exchange: Binance = Binance::new().await;
+    assert!(exchange.symbols.len() > 0);
+    assert!(exchange.prices.len() > 0);
+    assert!(exchange.exchange_rates.len() > 0);
+  }
 
-//   #[tokio::test]
-//   async fn it_places_a_trade() {
-//     let exchange: Binance = Binance::new().await;
-//     let symbol = "BTCUSDT";
-//     let quantity = 0.0002;
-//     let side = "BUY";
+  #[tokio::test]
+  async fn it_extracts_binance_orderbook() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let exchange: Binance = Binance::new().await;
+    let orderbook_asks: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", BookType::Asks).await.unwrap();
+    let orderbook_bids: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", BookType::Bids).await.unwrap();
+    assert!(orderbook_asks[0].0 > orderbook_bids[0].0);
+    assert!(orderbook_asks[0].0 < orderbook_asks[1].0);
+    assert!(orderbook_bids[0].0 > orderbook_bids[1].0);
+  }
 
-//     dbg!(quantity);
-//     dbg!(side);
-//     let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
-//     let price: f64 = *exchange.prices.get(symbol).unwrap();
-//     let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+  #[tokio::test]
+  async fn it_runs_bellman_ford_single_and_multi() {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let exchange: Binance = Binance::new().await;
+    let cycle = exchange.run_bellman_ford_single();
+    let cycles = exchange.run_bellman_ford_multi();
+    assert!(cycle.is_some());
+    assert!(cycles.len() > 0);
+  }
 
-//     let order = exchange.place_market_order(symbol, side, size).await;
-//     dbg!(order);
-//   }
-// }
+  // #[tokio::test]
+  // async fn it_places_a_trade() {
+  //   let exchange: Binance = Binance::new().await;
+  //   let symbol = "BTCUSDT";
+  //   let quantity = 0.0002;
+  //   let side = "BUY";
+
+  //   dbg!(quantity);
+  //   dbg!(side);
+  //   let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
+  //   let price: f64 = *exchange.prices.get(symbol).unwrap();
+  //   let size: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+
+  //   let order = exchange.place_market_order(symbol, side, size).await;
+  //   dbg!(order);
+  // }
+}
