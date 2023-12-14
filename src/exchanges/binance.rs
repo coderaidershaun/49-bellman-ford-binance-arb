@@ -1,4 +1,5 @@
 use crate::bellmanford::{BellmanFord, Edge};
+use crate::constants::FIAT_EXCLUSION;
 use crate::models::{BookType, SmartError, SymbolInfo};
 use crate::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 use crate::helpers;
@@ -9,6 +10,8 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
+use dotenv::dotenv;
+use std::env;
 
 #[derive(Debug, Clone)]
 pub struct Binance {
@@ -42,6 +45,9 @@ impl ApiCalls for Binance {
           let quote_asset = symbol_info["quoteAsset"].as_str().unwrap_or_default().to_string();
           let base_asset_precision = symbol_info["baseAssetPrecision"].as_u64().unwrap_or_default() as u8;
           let quote_asset_precision = symbol_info["quoteAssetPrecision"].as_u64().unwrap_or_default() as u8;
+          
+          // Guard: Ensure no fiat currency
+          if FIAT_EXCLUSION.contains(&base_asset.as_str()) || FIAT_EXCLUSION.contains(&quote_asset.as_str()) { continue; }
 
           // Extract minQty, maxQty, and stepSize from LOT_SIZE filter
           let lot_size_filter = symbol_info["filters"].as_array().unwrap()
@@ -132,8 +138,14 @@ impl ApiCalls for Binance {
   /// Places market order
   /// Side BUY / SELL
   async fn place_market_order(&self, symbol: &str, side: &str, quantity: f64) -> Result<reqwest::Response, reqwest::Error> {
-    let api_key = "YOUR KEY";
-    let secret_key = "YOUR SECRET";
+    dotenv().ok();
+
+    let api_key = env::var("BINANCE_API_KEY")
+      .expect("BINANCE_API_KEY not found in .env file");
+
+    let api_secret = env::var("BINANCE_API_SECRET")
+      .expect("BINANCE_API_SECRET not found in .env file");
+
     let order_type = "MARKET";
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
 
@@ -141,7 +153,7 @@ impl ApiCalls for Binance {
     let mut query = format!("symbol={}&side={}&type={}&quantity={}&timestamp={}", symbol, side, order_type, quantity, timestamp);
 
     // Create signature
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes()).unwrap();
+    let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
     mac.update(query.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
 

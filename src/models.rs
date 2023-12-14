@@ -16,6 +16,17 @@ pub enum SmartError {
   SerdeJson(#[from] serde_json::Error)
 }
 
+pub type IsStore = bool;
+
+#[derive(Debug)]
+pub enum Mode {
+  TradeSearch(IsStore),
+  TradeWss(IsStore),
+  NoTradeSearch(IsStore),
+  NoTradeWss(IsStore),
+  NoTradeBoth(IsStore)
+}
+
 #[derive(Debug)]
 pub enum Direction {
   Forward,

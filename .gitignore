@@ -1,2 +1,3 @@
 /target
+.env
 bellman_ford_pegasus

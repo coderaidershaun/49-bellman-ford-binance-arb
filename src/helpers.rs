@@ -21,7 +21,7 @@ pub fn create_exchange_rates(
 
 /// Validate Quantity
 /// Validates that the quantity being requested matches exchange criteria
-pub fn validate_quantity(symbol_info: &SymbolInfo, quantity: f64, price: f64) -> Result<f64, String> {
+pub fn validate_quantity(symbol_info: &SymbolInfo, quantity: f64, general_price: f64) -> Result<f64, String> {
   let min_qty: f64 = symbol_info.min_qty.parse().map_err(|_| "Invalid min_qty")?;
   let max_qty: f64 = symbol_info.max_qty.parse().map_err(|_| "Invalid max_qty")?;
   let step_size: f64 = symbol_info.step_size.parse().map_err(|_| "Invalid step_size")?;
@@ -39,24 +39,29 @@ pub fn validate_quantity(symbol_info: &SymbolInfo, quantity: f64, price: f64) ->
     quantity = (quantity * precision_factor).round() / precision_factor;
   }
 
+  // Guard: Ensure quantity remaining is not zero
+  if quantity == 0.0 {
+    return Err(format!("Effective quantity after trade would leave zero: {} {} {}", symbol_info.symbol, quantity * general_price, symbol_info.max_notional));
+  }
+
   // Guard: Check if the quantity is greater than or equal to the minimum size
   if quantity < min_qty {
-    return Err("Quantity is less than the minimum required".to_string());
+    return Err(format!("Quantity is less than the minimum required: {} {} {}", symbol_info.symbol, quantity, min_qty));
   }
 
   // Guard: Check if the quantity is less than or equal to the maximum
   if quantity > max_qty {
-    return Err("Quantity exceeds the maximum limit".to_string());
+    return Err(format!("Quantity exceeds the maximum limit: {} {} {}", symbol_info.symbol, quantity, max_qty));
   }
 
   // Guard: Check if the quantity aligns with minimum notional value
-  if quantity * price < symbol_info.min_notional.parse().expect("Failed to parse min notional value") {
-    return Err("Total trade value under minimum notional value".to_string());
+  if quantity * general_price < symbol_info.min_notional.parse().expect("Failed to parse min notional value") {
+    return Err(format!("Total trade value under minimum notional value: {} {} {}", symbol_info.symbol, quantity * general_price, symbol_info.min_notional));
   }
 
   // Guard: Check if the quantity aligns with minimum notional value
-  if quantity * price > symbol_info.max_notional.parse().expect("Failed to parse max notional value") {
-    return Err("Total trade value over maximum notional value".to_string());
+  if quantity * general_price > symbol_info.max_notional.parse().expect("Failed to parse max notional value") {
+    return Err(format!("Total trade value over maximum notional value: {} {} {}", symbol_info.symbol, quantity * general_price, symbol_info.max_notional));
   }
 
   Ok(quantity)

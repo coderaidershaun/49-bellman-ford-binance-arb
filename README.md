@@ -9,6 +9,21 @@ cargo build --release
 ./target/release/bellman_ford_pegasus.exe
 ```
 
+### Create .env
+
+Create a .env file in the project folder
+
+```shell (~project)
+touch .env
+```
+
+Add your Binance API Key and Secret. Ensure that these are marked for SPOT trading by restricting to your IP address and checking the relevant enable of spot trading checkbox.
+
+```conf (~env)
+BINANCE_API_KEY=ENTER YOUR KEY HERE
+BINANCE_API_SECRET=ENTER YOUR SECRET HERE
+```
+
 <h1>Build From Binary with Docker (Option 2 - AWS)</h1>
 
 ### Setup EC2
@@ -50,8 +65,15 @@ Upload the binary saved in the bellman_ford_pegasus folder to the AWS S3 bucket
 
 ### Add .ENV To Root
 
+Note, the below is a guide to save you .env. Where you save this depends on how and what folder you are running your code in.
+
 ```shell
 cd / && sudo touch .env && sudo nano .env
+```
+
+```conf (~env)
+BINANCE_API_KEY=ENTER YOUR KEY HERE
+BINANCE_API_SECRET=ENTER YOUR SECRET HERE
 ```
 
 ### Copy Binary to EC2
@@ -64,8 +86,6 @@ aws s3 cp s3://<YOUR-BUCKET>/bellman_ford_pegasus /home/ubuntu/bellman_ford_pega
 chmod +x bellman_ford_pegasus
 ./bellman_ford_pegasus
 ```
-
-<h1>Setup CRON</h1>
 
 ### Run CRON
 

@@ -1,8 +1,11 @@
-use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, UPDATE_SYMBOLS_SECONDS};
+use crate::models::SymbolInfo;
+
+use super::arb_execution::execute_arbitrage_cycle;
+use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, UPDATE_SYMBOLS_SECONDS, MAX_CYCLE_LENGTH, MODE};
 use super::bellmanford::Edge;
-use crate::exchanges::binance::Binance;
+use super::exchanges::binance::Binance;
 use super::helpers;
-use super::models::{ArbData, BookType, Direction, SmartError};
+use super::models::{ArbData, BookType, Direction, Mode, SmartError};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 
 use csv::WriterBuilder;
@@ -19,6 +22,8 @@ fn calculate_weighted_average_price(
     orderbook: &Vec<(f64, f64)>,
     budget: f64,
     direction: &Direction,
+    symbol_info: &SymbolInfo,
+    general_price: f64
 ) -> Option<(f64, f64, f64)> {
     let mut total_cost = 0.0;
     let mut total_quantity = 0.0;
@@ -61,21 +66,52 @@ fn calculate_weighted_average_price(
         }
     }
 
+    // Guard: Ensure quantity is not zero
     if total_quantity == 0.0 {
         return None;
     }
 
+    // Guard: Validate quantity
+    let quantity = match helpers::validate_quantity(symbol_info, total_quantity, general_price) {
+        Ok(quantity) => quantity,
+        Err(_e) => {
+            eprintln!("Failed to validate quantity: {:?}", _e);
+            return None;
+        }
+    };
+
+    // Adjust for any variation in quantity after validation
+    let quantity_gap_adj: f64 = total_quantity - quantity;
+    total_cost = total_cost - quantity_gap_adj;
+
     // Weighted average price calculation
     let weighted_average_price = match direction {
-        Direction::Reverse => total_cost / total_quantity,
-        Direction::Forward => total_quantity / total_cost,
+        Direction::Reverse => total_cost / quantity,
+        Direction::Forward => quantity / total_cost,
     };
   
-    Some((weighted_average_price, total_cost, total_quantity))
+    Some((weighted_average_price, total_cost, quantity))
 }
 
 /// Calculate Arbitrage
 /// Calculates arbitrage given relevant inputs and orderbooks
+/*  EXAMPLE of what would be sent to the exchange in respect to quantities
+    [src/arb_detection.rs:380] &book_types = [
+        Bids, => First trade is Reverse, SELL
+        Bids, => Second trade is Reverse, SELL
+        Asks, => Final trade is Forward, BUY
+    ]
+    [src/arb_detection.rs:381] &symbols = [
+        "BNBUSDT",
+        "LOKABNB",
+        "LOKAUSDT",
+    ]
+    [src/arb_detection.rs:382] &quantities = [
+        0.199, => Amount of BNB to Acquire with 50 USDT
+        175.4, => Amount of LOKI to Acquire with 0.199 BNB
+        175.4, => Amount of LOKI to Sell for N USDT
+    ]
+*/
 fn calculate_arbitrage<T>(
     orderbooks: &Vec<Vec<(f64, f64)>>,
     symbols: &Vec<String>,
@@ -95,33 +131,33 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
         let symbol = &symbols[i];
         let direction = &directions[i];
         let orderbook = &orderbooks[i];
-
-        // Guard: Validate quantity
         let symbol_info = exchange.symbols().get(symbol.as_str())?;
-        let price = exchange.prices().get(symbol.as_str())?;
-        let quantity = match helpers::validate_quantity(symbol_info, amount_in, *price) {
-            Ok(quantity) => quantity,
-            Err(_e) => {
-                // eprintln!("Failed to validate quantity: {:?}", _e);
-                return None;
-            }
-        };
+        let general_price = exchange.prices().get(symbol.as_str())?;
 
-        // Add quantity
-        quantities_input.push(quantity);
+        // Calculate Average Price and quantity out
+        let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(
+            orderbook, 
+            amount_in, 
+            &direction,
+            symbol_info, // for quantity validation
+            *general_price // for quantity validation
+        );
 
-        // Calculate Average Price and quantity out - first pass
-        let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(orderbook, amount_in, &direction);
-        let (weighted_price, total_qty) = match trade_res {
+        // Extract values
+        let (weighted_price, trade_qty) = match trade_res {
             Some((wp, _, qty)) => (wp, qty),
-            None => {
-                // eprintln!("Error calculating weighted price...");
-                return None;
-            }
+            None => return None
         };
 
-        // Update budget amount in
-        amount_in = total_qty;
+        // Define what amount would be sent for an order to the exchange
+        let trade_input_amount: f64 = match direction {
+            Direction::Forward => amount_in,
+            Direction::Reverse => trade_qty,
+        };
+        quantities_input.push(trade_input_amount);
+
+        // Update amount in for next leg budget amount
+        amount_in = trade_qty;
 
         // Calculate Real Rate
         match direction {
@@ -137,8 +173,10 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
 
 /// Validate Arbitrage Cycle
 /// Validates arbitrage cycle has enough depth
-pub async fn validate_arbitrage_cycle<T: BellmanFordEx>(cycle: &Vec<Edge>, exchange: &T) -> Option<(f64, Vec<f64>, Vec<String>)> 
-where T: BellmanFordEx + ExchangeData + ApiCalls {
+pub async fn validate_arbitrage_cycle<T: BellmanFordEx>(cycle: &Vec<Edge>, exchange: &T) 
+    -> Option<(f64, Vec<f64>, Vec<String>, Vec<BookType>)> 
+where T: BellmanFordEx + ExchangeData + ApiCalls 
+{
 
     // Guard: Ensure cycle
     if cycle.len() == 0 { return None };
@@ -207,7 +245,7 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
     let Some((real_rate, quantities)) = calculate_arbitrage::<T>(&orderbooks, &symbols, &directions, budget, exchange) else { return None };
 
     // Return result
-    Some((real_rate, quantities, symbols))
+    Some((real_rate, quantities, symbols, book_types))
 }
 
 /// Store Arb
@@ -292,16 +330,15 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
         std::thread::sleep(Duration::from_millis(100));
         timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
-        let exch_binance = Binance::new().await;
-        let cycles = exch_binance.run_bellman_ford_multi();
+        let exchange = Binance::new().await;
+        let cycles = exchange.run_bellman_ford_multi();
         for cycle in cycles {
-            let arb_opt = validate_arbitrage_cycle(&cycle, &exch_binance).await;
-            if let Some((arb_rate, _, _)) = arb_opt {
 
-                // // Use if wanting to store and track arbitrage opportunities
-                // let _arb_surface = calculate_arbitrage_surface_rate(&cycle) + 1.0;
-                // let _: () = arbitrage::store_arb_cycle(&cycle, arb_rate, arb_surface).unwrap();
+            // Guard: Ensure cycle length
+            if cycle.len() > MAX_CYCLE_LENGTH { continue; }
 
+            let arb_opt = validate_arbitrage_cycle(&cycle, &exchange).await;
+            if let Some((arb_rate, _, _, _)) = arb_opt {
                 if arb_rate >= MIN_ARB_SEARCH {
                     for leg in cycle {
                         if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.from.as_str()) { symbols_hs.insert(leg.from); }
@@ -338,7 +375,68 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
         }
     }
  }
- 
+
+/// Arb Scanner
+/// Scans and executes (if requested) for arbitrage
+pub async fn arb_scanner() -> Result<(), SmartError> {
+    println!("scanning for abitrage...");
+
+    loop {
+        std::thread::sleep(Duration::from_millis(50));
+
+        let exchange = Binance::new().await;
+        let cycles = exchange.run_bellman_ford_multi();
+        for cycle in cycles {
+
+            // Guard: Ensure cycle length
+            if cycle.len() > MAX_CYCLE_LENGTH { continue; }
+
+            let arb_opt = validate_arbitrage_cycle(&cycle, &exchange).await;
+            if let Some((arb_rate, quantities, symbols, book_types)) = arb_opt {
+
+                // Guard: Ensure arb rate
+                if arb_rate < MIN_ARB_SEARCH { continue; }
+
+                // Guard: Ensure from asset is ipart of Holding Assets
+                let from_asset = cycle[0].from.as_str();
+                if !ASSET_HOLDINGS.contains(&from_asset) { panic!("Error: Asset holdings do not include symbol") }
+
+                // Execute and get store trigger
+                let is_store = match MODE {
+                    Mode::TradeSearch(is_store) => {
+        
+                        dbg!(&book_types);
+                        dbg!(&symbols);
+                        dbg!(&quantities);
+
+                        // !!! PLACE TRADE !!!
+                        println!("\nPlacing trade...");
+                        let result = execute_arbitrage_cycle(
+                            from_asset,
+                            &symbols, &quantities, 
+                            &book_types, 
+                            &exchange
+                        ).await;
+                        if let Err(e) = result {
+                            panic!("Failed to place trade: {:?}", e);
+                        }
+
+                        is_store
+                    }, 
+                    Mode::NoTradeSearch(is_store) => is_store,
+                    _ => return Err(SmartError::Runtime("Should not be option other than TradSearch or NoTradeSearch for this function".to_string()))          
+                };
+
+                // Store Result
+                if is_store {
+                    let arb_surface: f64 = calculate_arbitrage_surface_rate(&cycle);
+                    let _: () = store_arb_cycle(&cycle, arb_rate, arb_surface)?;
+                }
+                
+            }
+        }
+    }
+}
 
  #[cfg(test)]
  mod test {
@@ -348,12 +446,19 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
     async fn it_calculates_weighted_price_metrics() {
         std::thread::sleep(Duration::from_millis(100));
         let exchange = Binance::new().await;
-        let budget = 10.0;
-        let direction = Direction::Forward;
-        let orderbook = exchange.get_orderbook_depth("BTCUSDT", BookType::Asks).await.unwrap();
-        let result = calculate_weighted_average_price(&orderbook, budget, &direction);
+        let symbol: &str = "BTCUSDT";
+        let budget: f64 = 50.0; // USDT
+        let direction = Direction::Reverse;
+        let price: f64 = exchange.prices[symbol];
+        let symbol_info: &SymbolInfo = &exchange.symbols[symbol];
+        let orderbook = exchange.get_orderbook_depth(symbol, BookType::Asks).await.unwrap();
+        let result = calculate_weighted_average_price(&orderbook, budget, &direction, &symbol_info, price);
         match result {
             Some((weighted_average_price, total_cost, total_quantity)) => {
+                dbg!(&weighted_average_price);
+                dbg!(&total_cost);
+                dbg!(&total_quantity);
+
                 assert!(weighted_average_price > 0.0);
                 assert!(total_cost > 0.0);
                 assert!(total_quantity > 0.0);
@@ -369,10 +474,11 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
         let cycle = exchange.run_bellman_ford_single().unwrap();
         let result = validate_arbitrage_cycle(&cycle, &exchange).await;
         match result {
-            Some((real_rate, quantities, symbols)) => {
+            Some((real_rate, quantities, symbols, book_types)) => {
                 assert!(real_rate > 0.0);
                 assert!(quantities.len() > 0);
                 assert!(symbols.len() > 0);
+                assert!(book_types.len() > 0);
             },
             None => println!("No real arbitrage opportunity")
         };

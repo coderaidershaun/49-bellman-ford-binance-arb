@@ -1,5 +1,5 @@
 // https://github.com/coderaidershaun/multithread-rust-arbitrage
-use crate::arbitrage::{validate_arbitrage_cycle, store_arb_cycle, calculate_arbitrage_surface_rate};
+use crate::arb_detection::{validate_arbitrage_cycle, store_arb_cycle, calculate_arbitrage_surface_rate};
 use crate::bellmanford::BellmanFord;
 use crate::constants::MIN_ARB_THRESH;
 use crate::helpers::create_exchange_rates;
