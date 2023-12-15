@@ -16,7 +16,6 @@ use url::Url;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::io::Write;
 
 const BINANCE_WS_API: &str = "wss://stream.binance.com:9443";
 
