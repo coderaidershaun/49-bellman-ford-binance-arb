@@ -6,7 +6,7 @@ use super::models::Mode;
 /// NoTradeSearch: Will search for arbitrage but not trade
 /// NoTradeWss:  Will listen to Websocket for arbitrage but not trade
 /// NoTradeBoth: Will both search and listen to Websocket for arbitrage but not trade
-pub const MODE: Mode = Mode::TradeWssWithSearch(true); // bool = is save results
+pub const MODE: Mode = Mode::NoTradeBoth(true); // bool = is save results
 
 pub const ASSET_HOLDINGS: [&str; 2] = ["USDT", "BTC"];
 pub const FIAT_EXCLUSION: [&str; 13] = ["ARS", "BIDR", "BRL", "EUR", "GBP", "IDRT", "NGN", "PLN", "RON", "RUB", "TRY", "UAH", "ZAR"];
