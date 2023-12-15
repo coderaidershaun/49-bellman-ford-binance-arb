@@ -15,4 +15,4 @@ pub const MAX_SYMBOLS_WATCH: usize = 5; // Number of assets to scan for arbitrag
 pub const MAX_CYCLE_LENGTH: usize = 5;
 pub const MIN_ARB_SEARCH: f64 = 1.001; // i.e. 1.005 for 0.01%
 pub const MIN_ARB_THRESH: f64 = 1.015; // i.e. 1.015 for 1.5%
-pub const UPDATE_SYMBOLS_SECONDS: u64 = 10; // Set at Minimum of 60 seconds in production for shared data symbol update (Only if Both Search and Wss)
+pub const UPDATE_SYMBOLS_SECONDS: u64 = 300; // Set at Minimum of 60 seconds in production for shared data symbol update (Only if Both Search and Wss)

@@ -51,8 +51,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
 
     // Connect to websocket
     let (mut socket, _) = connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
-    println!("\rthread: binance websocket running...");
-    std::io::stdout().flush().unwrap();
+    println!("thread: binance websocket running...");
 
     let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let mut next_timestamp: u64 = timestamp + 60; // Start with 60 seconds, then wait longer on future rounds
@@ -64,8 +63,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
       let msg = match msg {
         Message::Text(s) => s,
         _ => {
-          println!("\rwarning: binance not connected...");
-          std::io::stdout().flush().unwrap();
+          println!("warning: binance not connected...");
           break 'inner;
         },
       };
@@ -93,8 +91,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
         next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 10; // Check every 10 seconds
         let new_tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
         if new_tickers != tickers { 
-          println!("\rsymbols update, restarting connection...");
-          std::io::stdout().flush().unwrap();
+          println!("symbols update, restarting connection...");
           socket.close(None)?;
           break 'inner; 
         }

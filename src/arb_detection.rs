@@ -265,8 +265,7 @@ pub fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
 pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Result<(), SmartError> {
 
     // Initialize
-    print!("\rthread: best symbols running...");
-    std::io::stdout().flush().unwrap();
+    println!("thread: best symbols running...");
     let ignore_list = ["BTC", "USDT"];
 
     let mut symbols_hs: HashSet<String> = HashSet::new();
@@ -297,8 +296,7 @@ pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Resul
 
         // Update best symbols
         if timestamp >= save_timestamp && symbols_hs.len() == MAX_SYMBOLS_WATCH {
-            print!("\rupdating best symbols...");
-            std::io::stdout().flush().unwrap();
+            println!("updating best symbols...");
 
             let sym_list: Vec<String> = symbols_hs.iter().map(|s| s.clone()).collect();
             let mut new_best_symbols: Vec<String> = vec![];
