@@ -35,9 +35,7 @@ pub fn validate_quantity(symbol_info: &SymbolInfo, quantity: f64, general_price:
 
   // Ensure Precision: Check if the quantity aligns with the precision
   let precision_factor = 10f64.powi(symbol_info.base_asset_precision as i32);
-  if (quantity * precision_factor).fract() > 0.0 {
-    quantity = (quantity * precision_factor).round() / precision_factor;
-  }
+  quantity = (quantity * precision_factor).round() / precision_factor;
 
   // Guard: Ensure quantity remaining is not zero
   if quantity == 0.0 {

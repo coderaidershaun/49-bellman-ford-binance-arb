@@ -1,3 +1,4 @@
+use super::bellmanford::Edge;
 use super::constants::{MAX_CYCLE_LENGTH, MODE};
 use super::helpers::validate_quantity;
 use super::models::{Direction, SmartError, Mode};
@@ -8,6 +9,7 @@ use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 /// Using panics as checks should happen before this function is called.
 pub async fn execute_arbitrage_cycle<T>(
   budget: f64,
+  cycle: &Vec<Edge>,
   symbols: &Vec<String>, 
   directions: &Vec<Direction>,
   exchange: &T
@@ -35,13 +37,16 @@ pub async fn execute_arbitrage_cycle<T>(
   // Guard: Ensure symbols lenght matches directions length
   assert_eq!(symbols.len(), directions.len());
   
-  // Initialize quantity
+  // Initialize
   let mut quantity: f64 = budget;
-  dbg!(symbols);
+  let info_symbols = exchange.symbols();
+  let general_prices = exchange.prices();
+  dbg!(&symbols);
 
   for i in 0..symbols.len() {
     let symbol = &symbols[i];
     let direction = &directions[i];
+    let leg = &cycle[i];
 
     // Execute Trade
     println!("---");
@@ -50,12 +55,34 @@ pub async fn execute_arbitrage_cycle<T>(
     println!("leg: {}", i);
     println!("direction: {:?}", direction);
     println!("side: {}", direction.side());
-    println!("quantity: {}", quantity);
+    println!("initial quantity: {}", quantity);
     println!("---");
+    
+    // Adjust quantity if lower asset balance
+    let asset: String = leg.from.clone();
+    dbg!(&asset);
+    let symbol_info = info_symbols.get(symbol).expect("Failed to extract symbol during live trade");
+    dbg!(&symbol_info);
+    let asset_balance: f64 = exchange.get_asset_account_balance(&asset).await.expect("Failed to get asset balance");
+    if asset_balance == 0.0 { panic!("No trading amount available for this asset") }
+    if asset_balance < quantity { quantity = asset_balance };
+    
+    // Adj quantity for formatting
+    if direction == &Direction::Forward {
+      let general_price = general_prices[symbol];
+      dbg!(&general_price);
+      quantity = match validate_quantity(&symbol_info, quantity, general_price) {
+        Ok(qty) => qty,
+        Err(_e) => {
+          quantity
+        }
+      };
+    }
 
+    println!("updated quantity: {}", quantity);
+
+    // PLACE TRADE
     let result = exchange.place_market_order(symbol, direction, quantity).await;
-    let info_symbols = exchange.symbols();
-    let general_prices = exchange.prices();
 
     // Update next quantity to match what was received
     match result {
@@ -71,21 +98,6 @@ pub async fn execute_arbitrage_cycle<T>(
           match direction {
             Direction::Forward => quantity = quote_amount_out,
             Direction::Reverse => quantity = base_amount_out,
-          }
-
-          // Ensure that the quantity intended to be sent to the exchange is correct
-          dbg!(&i);
-          dbg!(&symbols.len());
-          dbg!(&directions.len());
-          if direction == &Direction::Reverse {
-            let symbol_info = info_symbols.get(symbol).expect("Failed to extract symbol during live trade");
-            let general_price = general_prices[symbol];
-            quantity = match validate_quantity(&symbol_info, quantity, general_price) {
-              Ok(qty) => qty,
-              Err(_e) => {
-                  panic!("Failed to validate quantity: {:?}", _e);
-              }
-            };
           }
         }
       },

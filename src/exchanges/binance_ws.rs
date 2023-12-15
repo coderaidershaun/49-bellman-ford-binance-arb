@@ -133,6 +133,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
                       println!("\nPlacing trade...");
                       let result = execute_arbitrage_cycle(
                         budget,
+                        &cycle,
                         &symbols,
                         &directions, 
                         &exch_clone

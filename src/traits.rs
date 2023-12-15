@@ -17,6 +17,7 @@ pub trait ApiCalls {
   async fn fetch_prices() -> Result<HashMap<String, f64>, SmartError>;
   async fn get_orderbook_depth(&self, symbol: &str, direction: &Direction) -> Result<Vec<(f64, f64)>, SmartError>;
   async fn place_market_order(&self, symbol: &str, direction: &Direction, quantity: f64) -> Result<(String, f64, f64), SmartError>;
+  async fn get_asset_account_balance(&self, asset: &str) -> Result<f64, SmartError>;
 }
 
 pub trait BellmanFordEx {

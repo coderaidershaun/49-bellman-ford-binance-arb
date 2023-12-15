@@ -359,6 +359,7 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
                         println!("\nPlacing trade...");
                         let result = execute_arbitrage_cycle(
                             budget,
+                            &cycle,
                             &symbols,
                             &directions,
                             &exchange

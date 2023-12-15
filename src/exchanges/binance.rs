@@ -194,91 +194,52 @@ impl ApiCalls for Binance {
     Ok((status, executed_base_qty, executed_quote_qty))
   }
 
-//   /// Get Asset Account Balance
-//   /// Retrieves Spot Balance for given asset (used for checking amounts available to trade)
-//   async fn get_asset_account_balance(&self, asset: &str) -> Result<f64, SmartError> {
-//     dotenv().ok();
+  /// Get Asset Account Balance
+  /// Retrieves Spot Balance for given asset (used for checking amounts available to trade)
+  async fn get_asset_account_balance(&self, asset: &str) -> Result<f64, SmartError> {
+    dotenv().ok();
 
-//     let delete_this_function = 0;
+    let api_key = env::var("BINANCE_API_KEY")
+      .expect("BINANCE_API_KEY not found in .env file");
 
-//     let api_key = env::var("BINANCE_API_KEY")
-//       .expect("BINANCE_API_KEY not found in .env file");
+    let api_secret = env::var("BINANCE_API_SECRET")
+      .expect("BINANCE_API_SECRET not found in .env file");
 
-//     let api_secret = env::var("BINANCE_API_SECRET")
-//       .expect("BINANCE_API_SECRET not found in .env file");
+    // Constuct Query
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
+    let mut query = format!("timestamp={}", timestamp);
 
-//     // Constuct Query
-//     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().to_string();
-//     let mut query = format!("timestamp={}", timestamp);
+    // Create signature
+    let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
+    mac.update(query.as_bytes());
+    let signature = hex::encode(mac.finalize().into_bytes());
 
-//     // Create signature
-//     let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
-//     mac.update(query.as_bytes());
-//     let signature = hex::encode(mac.finalize().into_bytes());
+    // Append signature to query
+    query.push_str("&signature=");
+    query.push_str(&signature);
 
-//     // Append signature to query
-//     query.push_str("&signature=");
-//     query.push_str(&signature);
+    // Send request
+    let url = format!("https://api.binance.com/api/v3/account?{}", query);
+    let client = reqwest::Client::new();
+    let res: reqwest::Response = client.get(url)
+      .header("X-MBX-APIKEY", api_key)
+      .send()
+      .await?;
 
-//     // Send request
-//     let url = format!("https://api.binance.com/api/v3/account?{}", query);
-//     let client = reqwest::Client::new();
-//     let res: reqwest::Response = client.get(url)
-//       .header("X-MBX-APIKEY", api_key)
-//       .send()
-//       .await?;
+    let res_text = res.text().await?;
+    let account_info: serde_json::Value = serde_json::from_str(&res_text)?;
+    let balances: &Vec<serde_json::Value> = account_info["balances"].as_array().expect("Failed to find balances");
+    let mut free_balance = 0.0;
+    for item in balances {
+      let coin = item["asset"].as_str().expect("Failed to locate asset");
+      if coin == asset {
+        free_balance = item["free"].as_str().expect("Failed to locate available amount").parse::<f64>().expect("Filed to parse balance");
+        break;
+      }
+    }    
 
-//     let res_text = res.text().await?;
-//     let account_info: serde_json::Value = serde_json::from_str(&res_text)?;
-//     let balances: &Vec<serde_json::Value> = account_info["balances"].as_array().expect("Failed to find balances");
-//     let mut free_balance = 0.0;
-//     for item in balances {
-//       let coin = item["asset"].as_str().expect("Failed to locate asset");
-//       if coin == asset {
-//         free_balance = item["free"].as_str().expect("Failed to locate available amount").parse::<f64>().expect("Filed to parse balance");
-//         break;
-//       }
-//     }    
-
-//     Ok(free_balance)
-//   }
-
-//   /// Get Asset Account Balance
-//   /// Retrieves Spot Balance for given asset (used for checking amounts available to trade)
-//   async fn get_symbol_commission_rate(&self, symbol: &str) -> Result<f64, SmartError> {
-//     dotenv().ok();
-
-//     let api_key = env::var("BINANCE_API_KEY")
-//       .expect("BINANCE_API_KEY not found in .env file");
-
-//     let api_secret = env::var("BINANCE_API_SECRET")
-//       .expect("BINANCE_API_SECRET not found in .env file");
-
-//     // Constuct Query
-//     let mut query = format!("symbol={}", symbol);
-
-//     // Create signature
-//     let mut mac = Hmac::<Sha256>::new_from_slice(api_secret.as_bytes()).unwrap();
-//     mac.update(query.as_bytes());
-//     let signature = hex::encode(mac.finalize().into_bytes());
-
-//     // Append signature to query
-//     query.push_str("&signature=");
-//     query.push_str(&signature);
-
-//     // Send request
-//     let url = format!("https://api.binance.com/api/v3/account/commission?{}", query);
-//     let client = reqwest::Client::new();
-//     let res: reqwest::Response = client.get(url)
-//       .header("X-MBX-APIKEY", api_key)
-//       .send()
-//       .await?;
-
-//     let res_text = res.text().await?;
-//     let commission_info: serde_json::Value = serde_json::from_str(&res_text)?;
-//     dbg!(&commission_info);
-//     Ok(0.0)
-//   }
+    Ok(free_balance)
+  }
 }
 
 impl BellmanFordEx for Binance {
@@ -335,20 +296,28 @@ mod test {
     assert!(cycles.len() > 0);
   }
 
+  // #[tokio::test]
+  // async fn it_places_a_trade() {
+  //   let exchange: Binance = Binance::new().await;
+  //   let symbol = "BTCUSDT";
+  //   let quantity = 20.0;
+  //   let direction = Direction::Reverse;
+
+  //   let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
+  //   let price: f64 = *exchange.prices.get(symbol).unwrap();
+  //   let quantity: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+
+  //   let (status, base_amount_out, quote_amount_out) = exchange.place_market_order(symbol, &direction, quantity).await.unwrap();
+  //   assert!(status.as_str() == "FILLED");
+  //   assert!(base_amount_out > 0.0);
+  //   assert!(quote_amount_out > 0.0);
+  // }
+
   #[tokio::test]
-  async fn it_places_a_trade() {
+  async fn it_gets_account_balance() {
     let exchange: Binance = Binance::new().await;
-    let symbol = "BTCUSDT";
-    let quantity = 20.0;
-    let direction = Direction::Reverse;
-
-    let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
-    let price: f64 = *exchange.prices.get(symbol).unwrap();
-    let quantity: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
-
-    let (status, base_amount_out, quote_amount_out) = exchange.place_market_order(symbol, &direction, quantity).await.unwrap();
-    assert!(status.as_str() == "FILLED");
-    assert!(base_amount_out > 0.0);
-    assert!(quote_amount_out > 0.0);
+    let asset = "USDT";
+    let balance = exchange.get_asset_account_balance(asset).await.unwrap();
+    assert!(balance > 0.0);
   }
 }
