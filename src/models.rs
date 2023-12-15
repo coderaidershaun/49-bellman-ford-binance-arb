@@ -27,23 +27,24 @@ pub enum Mode {
   NoTradeBoth(IsStore)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Direction {
   Forward,
   Reverse
 }
 
-#[derive(Debug, Clone)]
-pub enum BookType {
-  Asks,
-  Bids,
-}
-
-impl BookType {
-  pub fn as_str(&self) -> &'static str {
+impl Direction {
+  pub fn orderbook(&self) -> &'static str {
     match self {
-      Self::Asks => "asks",
-      Self::Bids => "bids"
+      Self::Forward => "asks",
+      Self::Reverse => "bids"
+    }
+  }
+
+  pub fn side(&self) -> &'static str {
+    match self {
+      Self::Forward => "SELL",
+      Self::Reverse => "BUY"
     }
   }
 }

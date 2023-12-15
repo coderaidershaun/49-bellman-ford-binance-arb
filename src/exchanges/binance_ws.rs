@@ -116,7 +116,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
           if let Some(cycle) = cycle_opt {
             if cycle.len() > 0 {
               let arb_opt = validate_arbitrage_cycle(&cycle, &exch_clone).await;
-              if let Some((arb_rate, quantities, symbols, book_types)) = arb_opt {
+              if let Some((arb_rate, symbols, directions, budget)) = arb_opt {
 
                 // Ensure arb rate
                 if arb_rate >= MIN_ARB_THRESH { 
@@ -129,17 +129,13 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
                   let is_store = match MODE {
                     Mode::TradeWss(is_store) => {
 
-                      dbg!(&book_types);
-                      dbg!(&symbols);
-                      dbg!(&quantities);
-
                       // !!! PLACE TRADE !!!
                       println!("\nPlacing trade...");
                       let result = execute_arbitrage_cycle(
-                          &cycle,
-                          &symbols, &quantities, 
-                          &book_types, 
-                          &exch_clone
+                        budget,
+                        &symbols,
+                        &directions, 
+                        &exch_clone
                       ).await;
                       
                       if let Err(e) = result {

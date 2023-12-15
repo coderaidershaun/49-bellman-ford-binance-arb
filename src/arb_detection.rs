@@ -1,11 +1,8 @@
-use crate::models::SymbolInfo;
-
 use super::arb_execution::execute_arbitrage_cycle;
 use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, MIN_ARB_THRESH, UPDATE_SYMBOLS_SECONDS, MAX_CYCLE_LENGTH, MODE};
 use super::bellmanford::Edge;
 use super::exchanges::binance::Binance;
-use super::helpers;
-use super::models::{ArbData, BookType, Direction, Mode, SmartError};
+use super::models::{ArbData, Direction, Mode, SmartError};
 use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 
 use csv::WriterBuilder;
@@ -22,8 +19,6 @@ fn calculate_weighted_average_price(
     orderbook: &Vec<(f64, f64)>,
     budget: f64,
     direction: &Direction,
-    symbol_info: &SymbolInfo,
-    general_price: f64
 ) -> Option<(f64, f64, f64)> {
     let mut total_cost = 0.0;
     let mut total_quantity = 0.0;
@@ -71,90 +66,41 @@ fn calculate_weighted_average_price(
         return None;
     }
 
-    // Guard: Validate quantity
-    let quantity = match helpers::validate_quantity(symbol_info, total_quantity, general_price) {
-        Ok(quantity) => quantity,
-        Err(_e) => {
-            eprintln!("Failed to validate quantity: {:?}", _e);
-            return None;
-        }
-    };
-
-    // Adjust for any variation in quantity after validation
-    let quantity_gap_adj: f64 = total_quantity - quantity;
-    total_cost = total_cost - quantity_gap_adj;
-
     // Weighted average price calculation
     let weighted_average_price = match direction {
-        Direction::Reverse => total_cost / quantity,
-        Direction::Forward => quantity / total_cost,
+        Direction::Reverse => total_cost / total_quantity,
+        Direction::Forward => total_quantity / total_cost,
     };
   
-    Some((weighted_average_price, total_cost, quantity))
+    Some((weighted_average_price, total_cost, total_quantity))
 }
 
 /// Calculate Arbitrage
 /// Calculates arbitrage given relevant inputs and orderbooks
-/*  EXAMPLE of what would be sent to the exchange in respect to quantities
-    [src/arb_detection.rs:380] &book_types = [
-        Bids, => First trade is Reverse, SELL
-        Bids, => Second trade is Reverse, SELL
-        Asks, => Final trade is Forward, BUY
-    ]
-    [src/arb_detection.rs:381] &symbols = [
-        "BNBUSDT",
-        "LOKABNB",
-        "LOKAUSDT",
-    ]
-    [src/arb_detection.rs:382] &quantities = [
-        0.199, => Amount of BNB to Acquire with 50 USDT
-        175.4, => Amount of LOKI to Acquire with 0.199 BNB
-        175.4, => Amount of LOKI to Sell for N USDT
-    ]
-*/
-fn calculate_arbitrage<T>(
+fn calculate_arbitrage(
     orderbooks: &Vec<Vec<(f64, f64)>>,
     symbols: &Vec<String>,
     directions: &Vec<Direction>,
-    budget: f64,
-    exchange: &T,
-) -> Option<(f64, Vec<f64>)> 
-where T: BellmanFordEx + ExchangeData + ApiCalls {
+    budget: f64
+) -> Option<f64> {
 
     // Initialize
     let mut real_rate = 1.0;
-    let mut quantities_input = vec![];
     let mut amount_in = budget;
 
     // Perform arbitrage calculation
     for i in 0..symbols.len() {
-        let symbol = &symbols[i];
         let direction = &directions[i];
         let orderbook = &orderbooks[i];
-        let symbol_info = exchange.symbols().get(symbol.as_str())?;
-        let general_price = exchange.prices().get(symbol.as_str())?;
 
         // Calculate Average Price and quantity out
-        let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(
-            orderbook, 
-            amount_in,
-            &direction,
-            symbol_info, // for quantity validation
-            *general_price // for quantity validation
-        );
+        let trade_res: Option<(f64, f64, f64)> = calculate_weighted_average_price(orderbook, amount_in, &direction);
 
         // Extract values
         let (weighted_price, trade_qty) = match trade_res {
             Some((wp, _, qty)) => (wp, qty),
             None => return None
         };
-
-        // Define what amount would be sent for an order to the exchange
-        let trade_input_amount: f64 = match direction {
-            Direction::Forward => amount_in,
-            Direction::Reverse => trade_qty,
-        };
-        quantities_input.push(trade_input_amount);
 
         // Update amount in for next leg budget amount
         amount_in = trade_qty;
@@ -167,14 +113,14 @@ where T: BellmanFordEx + ExchangeData + ApiCalls {
     }
 
     // Return results
-    Some((real_rate, quantities_input))
+    Some(real_rate)
 }
 
 
 /// Validate Arbitrage Cycle
 /// Validates arbitrage cycle has enough depth
 pub async fn validate_arbitrage_cycle<T: BellmanFordEx>(cycle: &Vec<Edge>, exchange: &T) 
-    -> Option<(f64, Vec<f64>, Vec<String>, Vec<BookType>)> 
+    -> Option<(f64, Vec<String>, Vec<Direction>, f64)> 
 where T: BellmanFordEx + ExchangeData + ApiCalls 
 {
 
@@ -206,7 +152,6 @@ where T: BellmanFordEx + ExchangeData + ApiCalls
     // Initialize
     let mut symbols: Vec<String> = vec![];
     let mut directions: Vec<Direction> = vec![];
-    let mut book_types: Vec<BookType> = vec![];
     let mut orderbooks: Vec<Vec<(f64, f64)>> = vec![];
 
     // Extract info for parallel async orderbook fetching
@@ -214,17 +159,19 @@ where T: BellmanFordEx + ExchangeData + ApiCalls
         let symbol_1 = format!("{}{}", leg.to, leg.from);
         let symbol_2 = format!("{}{}", leg.from, leg.to);
         let symbol = if exchange.symbols().contains_key(symbol_1.as_str()) { symbol_1 } else { symbol_2 };
-        let book_type = if symbol.starts_with(leg.from.as_str()) { BookType::Asks } else { BookType::Bids };
-        let direction = if symbol.starts_with(leg.from.as_str()) { Direction::Forward } else { Direction::Reverse };
+        let direction = if symbol.starts_with(leg.from.as_str()) { 
+            Direction::Forward // Uses Asks orderbooks
+        } else { 
+            Direction::Reverse // Uses Bids orderbooks
+        };
 
         symbols.push(symbol);
         directions.push(direction);
-        book_types.push(book_type);
     }
 
     // Build futures for orderbook asyncronous extraction
-    let futures: Vec<_> = symbols.iter().zip(book_types.iter())
-        .map(|(symbol, book_type)| exchange.get_orderbook_depth(symbol.as_str(), book_type.clone()))
+    let futures: Vec<_> = symbols.iter().zip(directions.iter())
+        .map(|(symbol, direction)| exchange.get_orderbook_depth(symbol.as_str(), direction))
         .collect();
 
     // Call api for orderbooks
@@ -242,10 +189,10 @@ where T: BellmanFordEx + ExchangeData + ApiCalls
     }
 
     // Calculate Arbitrage
-    let Some((real_rate, quantities)) = calculate_arbitrage::<T>(&orderbooks, &symbols, &directions, budget, exchange) else { return None };
+    let Some(real_rate) = calculate_arbitrage(&orderbooks, &symbols, &directions, budget) else { return None };
 
     // Return result
-    Some((real_rate, quantities, symbols, book_types))
+    Some((real_rate, symbols, directions, budget))
 }
 
 /// Store Arb
@@ -395,7 +342,7 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
             if cycle.len() > MAX_CYCLE_LENGTH { continue; }
 
             let arb_opt = validate_arbitrage_cycle(&cycle, &exchange).await;
-            if let Some((arb_rate, quantities, symbols, book_types)) = arb_opt {
+            if let Some((arb_rate, symbols, directions, budget)) = arb_opt {
 
                 // Guard: Ensure arb rate
                 if arb_rate < MIN_ARB_THRESH { continue; }
@@ -407,17 +354,13 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
                 // Execute and get store trigger
                 let is_store = match MODE {
                     Mode::TradeSearch(is_store) => {
-        
-                        dbg!(&book_types);
-                        dbg!(&symbols);
-                        dbg!(&quantities);
 
                         // !!! PLACE TRADE !!!
                         println!("\nPlacing trade...");
                         let result = execute_arbitrage_cycle(
-                            &cycle,
-                            &symbols, &quantities, 
-                            &book_types, 
+                            budget,
+                            &symbols,
+                            &directions,
                             &exchange
                         ).await;
                         
@@ -453,10 +396,8 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
         let symbol: &str = "BTCUSDT";
         let budget: f64 = 50.0; // USDT
         let direction = Direction::Reverse;
-        let price: f64 = exchange.prices[symbol];
-        let symbol_info: &SymbolInfo = &exchange.symbols[symbol];
-        let orderbook = exchange.get_orderbook_depth(symbol, BookType::Asks).await.unwrap();
-        let result = calculate_weighted_average_price(&orderbook, budget, &direction, &symbol_info, price);
+        let orderbook = exchange.get_orderbook_depth(symbol, &direction).await.unwrap();
+        let result = calculate_weighted_average_price(&orderbook, budget, &direction);
         match result {
             Some((weighted_average_price, total_cost, total_quantity)) => {
                 dbg!(&weighted_average_price);
@@ -478,11 +419,11 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
         let cycle = exchange.run_bellman_ford_single().unwrap();
         let result = validate_arbitrage_cycle(&cycle, &exchange).await;
         match result {
-            Some((real_rate, quantities, symbols, book_types)) => {
+            Some((real_rate, symbols, directions, budget)) => {
                 assert!(real_rate > 0.0);
-                assert!(quantities.len() > 0);
                 assert!(symbols.len() > 0);
-                assert!(book_types.len() > 0);
+                assert!(directions.len() > 0);
+                assert!(budget > 0.0);
             },
             None => println!("No real arbitrage opportunity")
         };
