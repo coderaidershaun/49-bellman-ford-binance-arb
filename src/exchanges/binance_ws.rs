@@ -13,23 +13,17 @@ use std::collections::HashMap;
 use serde_json::Value;
 use url::Url;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const BINANCE_WS_API: &str = "wss://stream.binance.com:9443";
 
-/// Extract Tickers
-/// Extracts tickers from shared_best symbols
-fn extract_tickers(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> Vec<String> {
-  let best_symbols_arr = shared_best_symbols.lock().unwrap();
-  best_symbols_arr.iter().map(|s| s.to_owned().to_lowercase()).collect()
-}
-
 /// Websocket Binance
 /// Listens to latest bid and ask prices for a set of assets
-pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> Result<(), SmartError> {
+pub async fn websocket_binance() -> Result<(), SmartError> {
 
+  let tickers: Vec<&str> = vec!["BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT", "ADABTC", "LINKBTC", "XMRBTC", "ADAUSDT", "PEPEBTC", "DOGEUSDT", "DOGEBTC"];
   let is_calculating = Arc::new(AtomicBool::new(false));
   let is_calculating_for_thread = is_calculating.clone();
 
@@ -39,11 +33,8 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
     let exchange: Binance = Binance::new().await;
     let mut prices: HashMap<String, f64> = HashMap::new();
 
-    // Extract tickers from best
-    let tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
-
     // Construct Stream
-    let ext_url: Vec<String> = tickers.iter().map(|t| format!("{}@bookTicker/", t)).collect();
+    let ext_url: Vec<String> = tickers.iter().map(|t| format!("{}@bookTicker/", t.to_lowercase())).collect();
     let ext_url_str = ext_url.concat();
     let mut binance_url = format!("{}/stream?streams={}", BINANCE_WS_API, ext_url_str);
     binance_url.pop();
@@ -51,9 +42,6 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
     // Connect to websocket
     let (mut socket, _) = connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
     println!("thread: binance websocket running...");
-
-    let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let mut next_timestamp: u64 = timestamp + 60; // Start with 60 seconds, then wait longer on future rounds
 
     'inner: loop {
       
@@ -84,18 +72,6 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
         continue;
       }
 
-      // Guard: Check for best symbols updates
-      timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-      if timestamp >= next_timestamp {
-        next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 10; // Check every 10 seconds
-        let new_tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
-        if new_tickers != tickers { 
-          println!("symbols update, restarting connection...");
-          socket.close(None)?;
-          break 'inner; 
-        }
-      }
-
       // Update exchange rates
       let exchange_rates: Vec<(String, String, f64)> = create_exchange_rates(&exchange.symbols, &prices);
 
@@ -122,28 +98,26 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
                   if !ASSET_HOLDINGS.contains(&from_asset) { panic!("Error: Asset holdings do not include symbol") }
 
                   // Execute and get store trigger
-                  let is_store = match MODE {
-                    Mode::TradeWss(is_store) | Mode::TradeWssWithSearch(is_store) => {
-
-                      // !!! PLACE TRADE !!!
-                      println!("Placing trade...");
-                      let result = execute_arbitrage_cycle(
-                        budget,
-                        &cycle,
-                        &symbols,
-                        &directions, 
-                        &exch_clone
-                      ).await;
-                      
-                      if let Err(e) = result {
-                          panic!("Failed to place trade: {:?}", e);
-                      }
-
-                      is_store
-                    },
-                    Mode::NoTradeWss(is_store) => is_store,
-                    _ => false
+                  let (is_store, is_trade) = match MODE {
+                    Mode::Listener(is_store, is_trade) => (is_store, is_trade),
+                    _ => (false, false)
                   };
+
+                  // !!! PLACE TRADE !!!
+                  if is_trade {
+                    println!("Placing trade...");
+                    let result = execute_arbitrage_cycle(
+                      budget,
+                      &cycle,
+                      &symbols,
+                      &directions, 
+                      &exch_clone
+                    ).await;
+                    
+                    if let Err(e) = result {
+                      panic!("Failed to place trade: {:?}", e);
+                    }
+                  }
 
                   // Store Result
                   if is_store {

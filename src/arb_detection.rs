@@ -1,5 +1,5 @@
 use super::arb_execution::execute_arbitrage_cycle;
-use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MAX_SYMBOLS_WATCH, MIN_ARB_SEARCH, MIN_ARB_THRESH, UPDATE_SYMBOLS_SECONDS, MAX_CYCLE_LENGTH, MODE};
+use super::constants::{ASSET_HOLDINGS, USD_BUDGET, MIN_ARB_THRESH, MAX_CYCLE_LENGTH, MODE};
 use super::bellmanford::Edge;
 use super::exchanges::binance::Binance;
 use super::models::{ArbData, Direction, Mode, SmartError};
@@ -7,7 +7,6 @@ use super::traits::{ApiCalls, BellmanFordEx, ExchangeData};
 
 use csv::WriterBuilder;
 use futures::future::join_all;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -260,67 +259,6 @@ pub fn calculate_arbitrage_surface_rate(cycle: &Vec<Edge>) -> f64 {
     cycle.iter().fold(1.0, |acc, edge| acc * f64::exp(-edge.weight)) - 1.0
 }
 
-/// Best Symbols
-/// Finds the assets that appear most often within the required arb threshold
-pub async fn best_symbols_thread(best_symbols: Arc<Mutex<Vec<String>>>) -> Result<(), SmartError> {
-
-    // Initialize
-    println!("thread: best symbols running...");
-    let ignore_list = ["BTC", "USDT"];
-
-    let mut symbols_hs: HashSet<String> = HashSet::new();
-    let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let mut save_timestamp: u64 = timestamp + UPDATE_SYMBOLS_SECONDS;
-
-    loop {
-        std::thread::sleep(Duration::from_millis(100));
-        timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-
-        let exchange = Binance::new().await;
-        let cycles = exchange.run_bellman_ford_multi();
-        for cycle in cycles {
-
-            // Guard: Ensure cycle length
-            if cycle.len() > MAX_CYCLE_LENGTH { continue; }
-
-            let arb_opt = validate_arbitrage_cycle(&cycle, &exchange).await;
-            if let Some((arb_rate, _, _, _)) = arb_opt {
-                if arb_rate >= MIN_ARB_SEARCH {
-                    for leg in cycle {
-                        if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.from.as_str()) { symbols_hs.insert(leg.from); }
-                        if symbols_hs.len() < MAX_SYMBOLS_WATCH && !ignore_list.contains(&leg.to.as_str()) { symbols_hs.insert(leg.to); }
-                    }
-                }
-            }
-        }
-
-        // Update best symbols
-        if timestamp >= save_timestamp && symbols_hs.len() == MAX_SYMBOLS_WATCH {
-            println!("updating best symbols...");
-
-            let sym_list: Vec<String> = symbols_hs.iter().map(|s| s.clone()).collect();
-            let mut new_best_symbols: Vec<String> = vec![];
-            for i in 0..sym_list.len() {
-                let sym_1 = format!("{}USDT", sym_list[i]);
-                let sym_2 = format!("{}BTC", sym_list[i]);
-                new_best_symbols.push(sym_1);
-                new_best_symbols.push(sym_2);
-            }
-
-            // Update shared symbols state
-            let mut shared_symbols = best_symbols.lock().unwrap();
-            shared_symbols.clear();
-            shared_symbols.extend(new_best_symbols);
-
-            // Clear set
-            symbols_hs.clear();
-
-            // Update next save timestamp
-            save_timestamp = timestamp + UPDATE_SYMBOLS_SECONDS;
-        }
-    }
- }
-
 /// Arb Scanner
 /// Scans and executes (if requested) for arbitrage
 pub async fn arb_scanner() -> Result<(), SmartError> {
@@ -343,42 +281,40 @@ pub async fn arb_scanner() -> Result<(), SmartError> {
             if let Some((arb_rate, symbols, directions, budget)) = arb_opt {
 
                 // Guard: Ensure arb rate
+                dbg!(&arb_rate);
                 if arb_rate < MIN_ARB_THRESH { continue; }
 
                 // Guard: Ensure from asset is ipart of Holding Assets
                 let from_asset = cycle[0].from.as_str();
                 if !ASSET_HOLDINGS.contains(&from_asset) { panic!("Error: Asset holdings do not include symbol") }
-
+                
                 // Execute and get store trigger
-                let is_store = match MODE {
-                    Mode::TradeSearch(is_store) => {
-
-                        // !!! PLACE TRADE !!!
-                        println!("\nPlacing trade...");
-                        let result = execute_arbitrage_cycle(
-                            budget,
-                            &cycle,
-                            &symbols,
-                            &directions,
-                            &exchange
-                        ).await;
-                        
-                        if let Err(e) = result {
-                            panic!("Failed to place trade: {:?}", e);
-                        }
-
-                        is_store
-                    }, 
-                    Mode::NoTradeSearch(is_store) => is_store,
-                    _ => return Err(SmartError::Runtime("Should not be option other than TradeSearch or NoTradeSearch for this function".to_string()))          
+                let (is_store, is_trade) = match MODE {
+                Mode::Searcher(is_store, is_trade) => (is_store, is_trade),
+                _ => (false, false)
                 };
+
+                // !!! PLACE TRADE !!!
+                if is_trade {
+                    println!("\nPlacing trade...");
+                    let result = execute_arbitrage_cycle(
+                        budget,
+                        &cycle,
+                        &symbols,
+                        &directions,
+                        &exchange
+                    ).await;
+                    
+                    if let Err(e) = result {
+                        panic!("Failed to place trade: {:?}", e);
+                    }
+                }
 
                 // Store Result
                 if is_store {
                     let arb_surface: f64 = calculate_arbitrage_surface_rate(&cycle);
                     let _: () = store_arb_cycle(&cycle, arb_rate, arb_surface)?;
                 }
-                
             }
         }
     }

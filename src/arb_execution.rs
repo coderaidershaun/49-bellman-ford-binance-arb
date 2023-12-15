@@ -18,12 +18,11 @@ pub async fn execute_arbitrage_cycle<T>(
 {
 
   // Guard: Ensure mode is set to trade
-  match MODE {
-    Mode::TradeSearch(_) => {},
-    Mode::TradeWss(_) => {},
-    Mode::TradeWssWithSearch(_) => {},
-    _ => panic!("Error: Trade attempted when Mode not set to trading.")
-  }
+  let is_trade = match MODE {
+    Mode::Searcher(_, is_trade) => is_trade,
+    Mode::Listener(_, is_trade) => is_trade,
+  };
+  if !is_trade { panic!("Tried to place trade when Mode not set to trading") }
 
   // Guard: Ensure correct cycle length
   if symbols.len() > MAX_CYCLE_LENGTH {

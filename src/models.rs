@@ -17,15 +17,13 @@ pub enum SmartError {
 }
 
 pub type IsStore = bool;
+pub type IsTrade = bool;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum Mode {
-  TradeSearch(IsStore),
-  TradeWss(IsStore),
-  TradeWssWithSearch(IsStore),
-  NoTradeSearch(IsStore),
-  NoTradeWss(IsStore),
-  NoTradeBoth(IsStore)
+  Searcher(IsStore, IsTrade),
+  Listener(IsStore, IsTrade),
 }
 
 #[derive(Debug, PartialEq)]
