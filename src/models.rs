@@ -22,6 +22,7 @@ pub type IsStore = bool;
 pub enum Mode {
   TradeSearch(IsStore),
   TradeWss(IsStore),
+  TradeWssWithSearch(IsStore),
   NoTradeSearch(IsStore),
   NoTradeWss(IsStore),
   NoTradeBoth(IsStore)

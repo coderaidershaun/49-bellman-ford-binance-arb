@@ -25,8 +25,8 @@ async fn main() {
       },
       Mode::TradeWss(_) | Mode::NoTradeWss(_) => {
          binance_ws::websocket_binance(best_symbols).await.unwrap();
-      },
-      Mode::NoTradeBoth(_) => {
+      }
+      Mode::TradeWssWithSearch(_) | Mode::NoTradeBoth(_) => {
          let best_symbols_shared = best_symbols.clone();
          let handle1 = tokio::spawn(async move {
             arb_detection::best_symbols_thread(best_symbols_shared).await.unwrap();

@@ -21,6 +21,7 @@ pub async fn execute_arbitrage_cycle<T>(
   match MODE {
     Mode::TradeSearch(_) => {},
     Mode::TradeWss(_) => {},
+    Mode::TradeWssWithSearch(_) => {},
     _ => panic!("Error: Trade attempted when Mode not set to trading.")
   }
 
@@ -41,7 +42,6 @@ pub async fn execute_arbitrage_cycle<T>(
   let mut quantity: f64 = budget;
   let info_symbols = exchange.symbols();
   let general_prices = exchange.prices();
-  dbg!(&symbols);
 
   for i in 0..symbols.len() {
     let symbol = &symbols[i];
@@ -60,17 +60,14 @@ pub async fn execute_arbitrage_cycle<T>(
     
     // Adjust quantity if lower asset balance
     let asset: String = leg.from.clone();
-    dbg!(&asset);
-    let symbol_info = info_symbols.get(symbol).expect("Failed to extract symbol during live trade");
-    dbg!(&symbol_info);
     let asset_balance: f64 = exchange.get_asset_account_balance(&asset).await.expect("Failed to get asset balance");
     if asset_balance == 0.0 { panic!("No trading amount available for this asset") }
     if asset_balance < quantity { quantity = asset_balance };
     
     // Adj quantity for formatting
     if direction == &Direction::Forward {
+      let symbol_info = info_symbols.get(symbol).expect("Failed to extract symbol during live trade");
       let general_price = general_prices[symbol];
-      dbg!(&general_price);
       quantity = match validate_quantity(&symbol_info, quantity, general_price) {
         Ok(qty) => qty,
         Err(_e) => {
@@ -78,9 +75,7 @@ pub async fn execute_arbitrage_cycle<T>(
         }
       };
     }
-
-    println!("updated quantity: {}", quantity);
-
+    
     // PLACE TRADE
     let result = exchange.place_market_order(symbol, direction, quantity).await;
 
@@ -90,7 +85,7 @@ pub async fn execute_arbitrage_cycle<T>(
 
         // Guard: Ensure success else panic
         if base_amount_out == 0.0 || status.as_str() != "FILLED" {
-          panic!("Order not filled: {:?}, {}, {}, {}", symbols, status, base_amount_out, quote_amount_out);
+          panic!("Order not filled: {} in {:?}, status: {}, base_amount: {}, quote_amouunt: {}", symbol, symbols, status, base_amount_out, quote_amount_out);
         }
         
         // Update quantity for next trade
@@ -101,7 +96,9 @@ pub async fn execute_arbitrage_cycle<T>(
           }
         }
       },
-      Err(e) => panic!("Failed to execute trade: {:?}", e)
+      Err(e) => {
+        panic!("Order not filled: {} in {:?}: e: {:?}", symbol, symbols, e);
+      }
     }
   }
 

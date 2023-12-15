@@ -51,7 +51,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
 
     // Connect to websocket
     let (mut socket, _) = connect(Url::parse(&binance_url).unwrap()).expect("Can't connect.");
-    print!("\rthread: binance websocket running...");
+    println!("\rthread: binance websocket running...");
     std::io::stdout().flush().unwrap();
 
     let mut timestamp: u64 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -64,7 +64,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
       let msg = match msg {
         Message::Text(s) => s,
         _ => {
-          print!("\rwarning: binance not connected...");
+          println!("\rwarning: binance not connected...");
           std::io::stdout().flush().unwrap();
           break 'inner;
         },
@@ -93,7 +93,7 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
         next_timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 10; // Check every 10 seconds
         let new_tickers: Vec<String> = extract_tickers(shared_best_symbols.clone());
         if new_tickers != tickers { 
-          print!("\rsymbols update, restarting connection...");
+          println!("\rsymbols update, restarting connection...");
           std::io::stdout().flush().unwrap();
           socket.close(None)?;
           break 'inner; 
@@ -127,10 +127,10 @@ pub async fn websocket_binance(shared_best_symbols: Arc<Mutex<Vec<String>>>) -> 
 
                   // Execute and get store trigger
                   let is_store = match MODE {
-                    Mode::TradeWss(is_store) => {
+                    Mode::TradeWss(is_store) | Mode::TradeWssWithSearch(is_store) => {
 
                       // !!! PLACE TRADE !!!
-                      println!("\nPlacing trade...");
+                      println!("Placing trade...");
                       let result = execute_arbitrage_cycle(
                         budget,
                         &cycle,
