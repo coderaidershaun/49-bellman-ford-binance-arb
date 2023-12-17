@@ -35,8 +35,8 @@ pub enum Direction {
 impl Direction {
   pub fn orderbook(&self) -> &'static str {
     match self {
-      Self::Forward => "asks",
-      Self::Reverse => "bids"
+      Self::Forward => "bids",
+      Self::Reverse => "asks"
     }
   }
 
