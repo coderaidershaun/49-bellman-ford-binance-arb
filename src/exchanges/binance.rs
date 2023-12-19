@@ -300,12 +300,12 @@ mod test {
   // async fn it_places_a_trade() {
   //   let exchange: Binance = Binance::new().await;
   //   let symbol = "BTCUSDT";
-  //   let quantity = 20.0;
+  //   let quantity = 20.0; // 20 USDT
   //   let direction = Direction::Reverse;
 
   //   let symbol_info: &SymbolInfo = exchange.symbols.get(symbol).unwrap();
   //   let price: f64 = *exchange.prices.get(symbol).unwrap();
-  //   let quantity: f64 = helpers::validate_quantity(symbol_info, quantity, price).unwrap();
+  //   let quantity: f64 = helpers::validate_quantity(symbol_info, quantity, price, &direction).unwrap();
 
   //   let (status, base_amount_out, quote_amount_out) = exchange.place_market_order(symbol, &direction, quantity).await.unwrap();
   //   assert!(status.as_str() == "FILLED");
