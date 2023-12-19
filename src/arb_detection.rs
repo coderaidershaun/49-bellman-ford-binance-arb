@@ -236,7 +236,7 @@ pub fn store_arb_cycle(cycle: &Vec<Edge>, arb_rate: f64, arb_surface: f64) -> Re
 
     // Save data
     let current_dir = std::env::current_dir()?;
-    let base_path = if current_dir.to_str().unwrap().contains("Users") { "/Users/shaun/Code/PACKAGES/49-bellman-ford-binance-arb".to_owned() } else { "/home/ubuntu".to_owned() };
+    let base_path = current_dir.to_str().unwrap();
     let file_path = format!("{}/arbitrage_data.csv", base_path);
     let file_exists = std::path::Path::new(file_path.as_str()).exists();
     let file: std::fs::File = OpenOptions::new()
