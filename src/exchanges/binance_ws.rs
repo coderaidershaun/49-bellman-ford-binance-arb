@@ -23,7 +23,7 @@ const BINANCE_WS_API: &str = "wss://stream.binance.com:9443";
 /// Listens to latest bid and ask prices for a set of assets
 pub async fn websocket_binance() -> Result<(), SmartError> {
 
-  let tickers: Vec<&str> = vec!["BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT", "ADABTC", "LINKBTC", "XMRBTC", "ADAUSDT", "PEPEBTC", "DOGEUSDT", "DOGEBTC"];
+  let tickers: Vec<&str> = vec!["BTCUSDT", "ETHUSDT", "LINKETH", "SOLETH", "SOLBTC", "LINKBTC"];
   let is_calculating = Arc::new(AtomicBool::new(false));
   let is_calculating_for_thread = is_calculating.clone();
 
