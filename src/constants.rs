@@ -2,7 +2,7 @@ use super::models::Mode;
 
 /// Searcher: Trades entire pool of assets
 /// Listener: Listens to and trades specific pool of assets
-pub const MODE: Mode = Mode::Listener(true, false); // bool = is save results, bool = is trade
+pub const MODE: Mode = Mode::Searcher(true, false); // bool = is save results, bool = is trade
 
 pub const ASSET_HOLDINGS: [&str; 2] = ["USDT", "BTC"];
 pub const FIAT_EXCLUSION: [&str; 13] = ["ARS", "BIDR", "BRL", "EUR", "GBP", "IDRT", "NGN", "PLN", "RON", "RUB", "TRY", "UAH", "ZAR"];
