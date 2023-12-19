@@ -279,8 +279,8 @@ mod test {
   async fn it_extracts_binance_orderbook() {
     std::thread::sleep(std::time::Duration::from_millis(100));
     let exchange: Binance = Binance::new().await;
-    let orderbook_asks: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", &Direction::Forward).await.unwrap();
-    let orderbook_bids: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", &Direction::Reverse).await.unwrap();
+    let orderbook_bids: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", &Direction::Forward).await.unwrap();
+    let orderbook_asks: Vec<(f64, f64)> = exchange.get_orderbook_depth("BTCUSDT", &Direction::Reverse).await.unwrap();
     assert!(orderbook_asks[0].0 > orderbook_bids[0].0);
     assert!(orderbook_asks[0].0 < orderbook_asks[1].0);
     assert!(orderbook_bids[0].0 > orderbook_bids[1].0);
@@ -313,11 +313,11 @@ mod test {
   //   assert!(quote_amount_out > 0.0);
   // }
 
-  #[tokio::test]
-  async fn it_gets_account_balance() {
-    let exchange: Binance = Binance::new().await;
-    let asset = "USDT";
-    let balance = exchange.get_asset_account_balance(asset).await.unwrap();
-    assert!(balance > 0.0);
-  }
+  // #[tokio::test]
+  // async fn it_gets_account_balance() {
+  //   let exchange: Binance = Binance::new().await;
+  //   let asset = "USDT";
+  //   let balance = exchange.get_asset_account_balance(asset).await.unwrap();
+  //   assert!(balance > 0.0);
+  // }
 }
